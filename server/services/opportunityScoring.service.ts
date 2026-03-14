@@ -268,6 +268,93 @@ export async function rankOpportunitiesForUser(
   return scored.slice(0, limit);
 }
 
+// ─── Opportunity Radar (v14) ────────────────────────────────────
+
+export interface OpportunityRadarCategory {
+  type: string;
+  label: string;
+  count: number;
+  avgScore: number;
+  topItems: Array<{ id: number; title: string; personName: string | null; compositeScore: number }>;
+}
+
+export interface OpportunityRadar {
+  totalOpen: number;
+  categories: OpportunityRadarCategory[];
+  /** Reconnect signals: people not contacted in 30+ days */
+  reconnectCount: number;
+  /** Intro opportunities: people with warm paths but no direct relationship */
+  introCount: number;
+  /** Collaboration potential: same-company or shared-tag opportunities */
+  collaborationCount: number;
+}
+
+/** Get categorized opportunity radar for dashboard widget */
+export async function getOpportunityRadar(userId: number): Promise<OpportunityRadar> {
+  const scored = await rankOpportunitiesForUser(userId, 100);
+
+  // Group by opportunityType
+  const typeGroups = new Map<string, ScoredOpportunity[]>();
+  for (const opp of scored) {
+    const type = opp.opportunityType || "other";
+    if (!typeGroups.has(type)) typeGroups.set(type, []);
+    typeGroups.get(type)!.push(opp);
+  }
+
+  const TYPE_LABELS: Record<string, string> = {
+    reconnect: "Reconnect",
+    intro: "Introduction",
+    collaboration: "Collaboration",
+    job_change: "Job Change",
+    funding: "Funding",
+    event: "Event",
+    content: "Content",
+    referral: "Referral",
+    other: "Other",
+  };
+
+  const categories: OpportunityRadarCategory[] = [];
+  for (const [type, opps] of Array.from(typeGroups)) {
+    const avgScore = Math.round(opps.reduce((sum, o) => sum + o.compositeScore, 0) / opps.length);
+    categories.push({
+      type,
+      label: TYPE_LABELS[type] || type.charAt(0).toUpperCase() + type.slice(1),
+      count: opps.length,
+      avgScore,
+      topItems: opps.slice(0, 3).map(o => ({
+        id: o.id,
+        title: o.title,
+        personName: o.personName,
+        compositeScore: o.compositeScore,
+      })),
+    });
+  }
+
+  categories.sort((a, b) => b.avgScore - a.avgScore);
+
+  // Count reconnect signals
+  const { items: allPeople } = await repo.getPeople(userId, { limit: 200 });
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  let reconnectCount = 0;
+  for (const p of allPeople as any[]) {
+    if (p.lastInteractionAt && new Date(p.lastInteractionAt).getTime() < thirtyDaysAgo && p.status !== "archived") {
+      reconnectCount++;
+    }
+  }
+
+  // Count intro and collaboration from opportunity types
+  const introCount = typeGroups.get("intro")?.length ?? 0;
+  const collaborationCount = typeGroups.get("collaboration")?.length ?? 0;
+
+  return {
+    totalOpen: scored.length,
+    categories,
+    reconnectCount,
+    introCount,
+    collaborationCount,
+  };
+}
+
 /** Get top N actions for today — the "morning briefing" */
 export async function getTopActions(
   userId: number,

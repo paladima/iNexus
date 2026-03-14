@@ -110,6 +110,11 @@ export const opportunitiesRouter = router({
       return scoringService.getTopActions(ctx.user.id, input?.count ?? 3);
     }),
 
+  radar: protectedProcedure
+    .query(async ({ ctx }) => {
+      return scoringService.getOpportunityRadar(ctx.user.id);
+    }),
+
   markActed: protectedProcedure
     .input(z.object({
       opportunityId: z.number(),

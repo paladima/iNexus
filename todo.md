@@ -413,3 +413,29 @@
 - [x] #29 Person Profile: AI summary, last contact, next action, tasks, opps, drafts, notes, warm paths (done in v6)
 - [x] #30 DEPLOY.md, README.md, .env.example, /api/health, worker scripts (done in v7)
 - [x] Updated test suite with v13 tests (179 tests passing: 12 v13fixes, 16 skillSynonyms, 11 v11fixes, 13 personMatcher, 21 fuzzyMatch, 17 v9pillars, 23 llmHelpers, 65 routers, 1 auth)
+
+## v14 — Three Major Features (Relationship Graph, Opportunity Radar, AI Networking Copilot)
+
+### Feature 1: Relationship Graph (BFS intro paths)
+- [x] Enhance relationships table with graph traversal support — getAllRelationships() in people.repo.ts, buildRelationshipGraph() in relationship.service.ts
+- [x] Implement BFS findIntroPath(userId, targetPersonId, maxHops) in relationship.service.ts — multi-hop BFS with strong contact detection
+- [x] Build adjacency graph from explicit relationships + implicit connections (same_company, same_list, shared_tags, same_geography)
+- [x] Show "Best intro path" on Person Profile via IntroPathVisualizer component (You → Alex → Mark → John)
+- [x] Add intro path visualization UI component with clickable nodes, edge labels, confidence badges
+- [x] Add tRPC endpoint: relationships.introPath
+
+### Feature 2: Opportunity Radar (signal scanning)
+- [x] Create getOpportunityRadar() in opportunityScoring.service.ts — categorizes opportunities by type with counts, avg scores, top items
+- [x] Enhance opportunity scoring with signal recency and type weighting (existing 4-component formula)
+- [x] Create OpportunityRadar dashboard widget with categorized counts (reconnect, intro, collaboration) and summary counters
+- [x] Add tRPC endpoint: opportunities.radar
+- [x] Integrate OpportunityRadar widget into Dashboard (Home.tsx)
+
+### Feature 3: AI Networking Copilot (daily briefs)
+- [x] Create getNetworkingBrief() in dashboard.service.ts — real-time brief combining reconnects, tasks, intros, follow-ups
+- [x] NetworkingBrief interface with items (type, title, description, priority), stats, greeting
+- [x] Reconnect detection (30+ days), overdue/due-today tasks, intro opportunities, follow-up signals (3 days)
+- [x] Build DailyBriefWidget dashboard component with priority-sorted action items, stats summary, time-of-day greeting
+- [x] Add tRPC endpoint: dashboard.networkingBrief
+- [x] Integrate DailyBriefWidget into Dashboard (Home.tsx)
+- [x] Updated test suite with v14 tests (208 tests passing: 29 v14features, 12 v13fixes, 16 skillSynonyms, 11 v11fixes, 13 personMatcher, 21 fuzzyMatch, 17 v9pillars, 23 llmHelpers, 65 routers, 1 auth)

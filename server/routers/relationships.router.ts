@@ -34,6 +34,12 @@ export const relationshipsRouter = router({
       return relService.findWarmPaths(ctx.user.id, input.personId);
     }),
 
+  introPath: protectedProcedure
+    .input(z.object({ personId: z.number(), maxHops: z.number().optional() }))
+    .query(async ({ ctx, input }) => {
+      return relService.findIntroPath(ctx.user.id, input.personId, input.maxHops ?? 4);
+    }),
+
   suggestIntros: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {

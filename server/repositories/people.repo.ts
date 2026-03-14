@@ -133,6 +133,13 @@ export async function getRelationshipsForPerson(userId: number, personId: number
     .orderBy(desc(relationships.confidence));
 }
 
+export async function getAllRelationships(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(relationships)
+    .where(eq(relationships.userId, userId));
+}
+
 export async function findWarmPaths(userId: number, targetPersonId: number) {
   const db = await getDb();
   if (!db) return [];

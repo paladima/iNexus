@@ -29,6 +29,7 @@ import { useState, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import WarmPaths from "@/components/WarmPaths";
+import IntroPathVisualizer from "@/components/IntroPathVisualizer";
 
 export default function PersonProfile() {
   const params = useParams<{ id: string }>();
@@ -331,6 +332,9 @@ export default function PersonProfile() {
               </CardContent>
             </Card>
           )}
+
+          {/* Intro Path — v14 Multi-hop */}
+          <IntroPathVisualizer personId={personId} personName={person.fullName} />
 
           {/* Warm Paths — v9 Pillar 3 */}
           <WarmPaths personId={personId} personName={person.fullName} />

@@ -21,6 +21,11 @@ export const dashboardRouter = router({
     return dashboardService.generateBrief(ctx.user.id);
   }),
 
+  networkingBrief: protectedProcedure
+    .query(async ({ ctx }) => {
+      return dashboardService.getNetworkingBrief(ctx.user.id);
+    }),
+
   briefStatus: protectedProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ ctx, input }) => {
