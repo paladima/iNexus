@@ -1,17 +1,21 @@
 /**
  * Job Handlers — register all background job types with the job service.
- * Import this once at server startup.
+ * Uses service layer for business logic. Import once at server startup.
  */
-
 import { registerJobHandler } from "./job.service";
 import { callLLM } from "./llm.service";
-import { dailyBriefSchema, personSummarySchema, opportunityDetectionSchema, voiceIntentSchema } from "../llmHelpers";
+import {
+  dailyBriefSchema,
+  personSummarySchema,
+  opportunityDetectionSchema,
+  voiceIntentSchema,
+} from "../llmHelpers";
 import * as repo from "../repositories";
+import * as oppService from "./opportunities.service";
+import * as voiceService from "./voice.service";
 
 /**
  * Call this once at server startup to register all handlers.
- * The handlers are defined as side effects, so just importing this module registers them.
- * This function exists as an explicit entry point.
  */
 export function registerAllHandlers() {
   console.log("[Jobs] All job handlers registered");
@@ -38,7 +42,12 @@ registerJobHandler("generate_brief", async (_jobId, userId, _payload) => {
             goals: goals ?? {},
             opportunities: opps.items.slice(0, 5),
             tasks: taskData.items.slice(0, 5),
-            staleContacts: stale.slice(0, 5).map(p => ({ name: p.fullName, lastInteraction: p.lastInteractionAt })),
+            staleContacts: stale
+              .slice(0, 5)
+              .map((p) => ({
+                name: p.fullName,
+                lastInteraction: p.lastInteractionAt,
+              })),
           }),
         },
       ],
@@ -77,17 +86,23 @@ registerJobHandler("generate_summary", async (_jobId, userId, payload) => {
       response_format: { type: "json_object" as const },
     },
     schema: personSummarySchema,
-    fallback: { summary: `${person.fullName} — ${person.title ?? "Professional"} at ${person.company ?? "Unknown"}`, keyTopics: [], relevanceScore: 0 },
+    fallback: {
+      summary: `${person.fullName} — ${person.title ?? "Professional"} at ${person.company ?? "Unknown"}`,
+      keyTopics: [],
+      relevanceScore: 0,
+    },
     userId,
     entityType: "person",
     entityId: personId,
   });
 
-  await repo.updatePerson(userId, personId, { aiSummary: (summary as any).summary });
+  await repo.updatePerson(userId, personId, {
+    aiSummary: (summary as any).summary,
+  });
   return summary as Record<string, unknown>;
 });
 
-// ─── Scan Opportunities ─────────────────────────────────────────
+// ─── Scan Opportunities (with deduplication via service) ────────
 registerJobHandler("scan_opportunities", async (_jobId, userId, _payload) => {
   const goals = await repo.getUserGoals(userId);
   const peopleData = await repo.getPeople(userId, { limit: 50 });
@@ -104,7 +119,12 @@ registerJobHandler("scan_opportunities", async (_jobId, userId, _payload) => {
           role: "user",
           content: JSON.stringify({
             goals: goals ?? {},
-            people: peopleData.items.map((p, i) => ({ index: i, name: p.fullName, title: p.title, company: p.company })),
+            people: peopleData.items.map((p, i) => ({
+              index: i,
+              name: p.fullName,
+              title: p.title,
+              company: p.company,
+            })),
           }),
         },
       ],
@@ -116,10 +136,16 @@ registerJobHandler("scan_opportunities", async (_jobId, userId, _payload) => {
   });
 
   let created = 0;
+  let duplicates = 0;
   for (const opp of (opportunities as any).opportunities ?? []) {
     const personIndex = opp.personIndex;
-    const person = typeof personIndex === "number" ? peopleData.items[personIndex] : undefined;
-    await repo.createOpportunity(userId, {
+    const person =
+      typeof personIndex === "number"
+        ? peopleData.items[personIndex]
+        : undefined;
+
+    // Use service-level dedup
+    const result = await oppService.createOpportunityIfUnique(userId, {
       title: opp.title,
       opportunityType: opp.opportunityType ?? "general",
       signalSummary: opp.signalSummary ?? "",
@@ -128,20 +154,25 @@ registerJobHandler("scan_opportunities", async (_jobId, userId, _payload) => {
       recommendedAction: opp.recommendedAction,
       score: String(opp.score ?? "0.5"),
     });
-    created++;
+
+    if (result.duplicate) {
+      duplicates++;
+    } else {
+      created++;
+    }
   }
-  return { created };
+  return { created, duplicates };
 });
 
 // ─── Voice Transcribe ───────────────────────────────────────────
-registerJobHandler("voice_transcribe", async (_jobId, userId, payload) => {
-  const { transcribeAudio } = await import("../_core/voiceTranscription");
+registerJobHandler("voice_transcribe", async (_jobId, _userId, payload) => {
   const audioUrl = payload.audioUrl as string;
   const language = payload.language as string | undefined;
-
-  const result = await transcribeAudio({ audioUrl, language });
-  if ("error" in result) throw new Error((result as any).error ?? "Transcription failed");
-  return { transcript: (result as any).text ?? "", language: (result as any).language ?? "en" };
+  const result = await voiceService.transcribeAudioFile(audioUrl, language);
+  return {
+    transcript: (result as any).text ?? "",
+    language: (result as any).language ?? "en",
+  };
 });
 
 // ─── Voice Parse ────────────────────────────────────────────────
@@ -170,32 +201,52 @@ registerJobHandler("voice_parse", async (_jobId, userId, payload) => {
 
 // ─── Batch Outreach ─────────────────────────────────────────────
 registerJobHandler("batch_outreach", async (_jobId, userId, payload) => {
-  const listId = payload.listId as number;
+  const listId = payload.listId as number | undefined;
+  const personIds = payload.personIds as number[] | undefined;
   const tone = (payload.tone as string) ?? "professional";
+  const context = payload.context as string | undefined;
   const goals = await repo.getUserGoals(userId);
-  const listPeople = await repo.getListPeopleForBatch(userId, listId);
+
+  let people: Array<{ id: number; fullName: string; title: string | null; company: string | null }> = [];
+
+  if (listId) {
+    const listPeople = await repo.getListPeopleForBatch(userId, listId);
+    people = listPeople.map((lp) => lp.person);
+  } else if (personIds) {
+    for (const pid of personIds) {
+      const p = await repo.getPersonById(userId, pid);
+      if (p) people.push(p);
+    }
+  }
 
   let created = 0;
-  for (const { person } of listPeople) {
+  for (const person of people) {
     const { data: draft } = await callLLM({
       promptModule: "batch_outreach",
       params: {
         messages: [
           {
             role: "system",
-            content: `Generate a ${tone} networking message. Return JSON: { subject, body }`,
+            content: `Generate a ${tone} networking message. ${context ? `Context: ${context}` : ""}. Return JSON: { subject, body }`,
           },
           {
             role: "user",
             content: JSON.stringify({
-              person: { name: person.fullName, title: person.title, company: person.company },
+              person: {
+                name: person.fullName,
+                title: person.title,
+                company: person.company,
+              },
               goals: goals ?? {},
             }),
           },
         ],
         response_format: { type: "json_object" as const },
       },
-      fallback: { subject: `Connecting with ${person.fullName}`, body: `Hi ${person.fullName}, I'd love to connect.` },
+      fallback: {
+        subject: `Connecting with ${person.fullName}`,
+        body: `Hi ${person.fullName}, I'd love to connect.`,
+      },
       userId,
       entityType: "person",
       entityId: person.id,

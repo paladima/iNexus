@@ -1,12 +1,11 @@
 /**
- * #17: People router — CRUD, notes, interactions, AI summary
+ * People Router — thin layer delegating to peopleService
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
-import { parseLLMWithSchema, personSummarySchema } from "../llmHelpers";
+import * as peopleService from "../services/people.service";
 
 export const peopleRouter = router({
   list: protectedProcedure
@@ -20,15 +19,15 @@ export const peopleRouter = router({
     .query(async ({ ctx, input }) => {
       return repo.getPeople(ctx.user.id, input ?? {});
     }),
+
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const person = await repo.getPersonById(ctx.user.id, input.id);
-      if (!person) throw new TRPCError({ code: "NOT_FOUND", message: "Person not found" });
-      const notes = await repo.getPersonNotes(ctx.user.id, input.id);
-      const interactionsList = await repo.getInteractions(ctx.user.id, input.id, 20);
-      return { ...person, notes, interactions: interactionsList };
+      const result = await peopleService.getPersonProfile(ctx.user.id, input.id);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Person not found" });
+      return result;
     }),
+
   create: protectedProcedure
     .input(z.object({
       fullName: z.string().min(1),
@@ -46,15 +45,9 @@ export const peopleRouter = router({
       tags: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const id = await repo.createPerson(ctx.user.id, input);
-      await repo.logActivity(ctx.user.id, {
-        activityType: "person_added",
-        title: `Added ${input.fullName}`,
-        entityType: "person",
-        entityId: id ?? undefined,
-      });
-      return { id };
+      return peopleService.savePerson(ctx.user.id, input);
     }),
+
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
@@ -77,6 +70,7 @@ export const peopleRouter = router({
       await repo.updatePerson(ctx.user.id, id, data);
       return { success: true };
     }),
+
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -89,12 +83,14 @@ export const peopleRouter = router({
       });
       return { success: true };
     }),
+
   addNote: protectedProcedure
     .input(z.object({ personId: z.number(), content: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       await repo.addPersonNote(ctx.user.id, input.personId, input.content);
       return { success: true };
     }),
+
   addInteraction: protectedProcedure
     .input(z.object({
       personId: z.number(),
@@ -106,31 +102,14 @@ export const peopleRouter = router({
       await repo.addInteraction(ctx.user.id, { ...input, occurredAt: new Date() });
       return { success: true };
     }),
+
   generateSummary: protectedProcedure
     .input(z.object({ personId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const person = await repo.getPersonById(ctx.user.id, input.personId);
-      if (!person) throw new TRPCError({ code: "NOT_FOUND" });
-      const notes = await repo.getPersonNotes(ctx.user.id, input.personId);
-      const ints = await repo.getInteractions(ctx.user.id, input.personId, 10);
-      const goals = await repo.getUserGoals(ctx.user.id);
-
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `Generate a concise networking summary for this person. Explain why they matter to the user's goals. Return JSON: { "summary": "...", "keyPoints": ["..."], "connectionStrength": "strong|moderate|new" }`
-          },
-          {
-            role: "user",
-            content: `Person: ${JSON.stringify(person)}\nNotes: ${JSON.stringify(notes)}\nInteractions: ${JSON.stringify(ints)}\nUser goals: ${JSON.stringify(goals)}`
-          }
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const parsed = parseLLMWithSchema(response, personSummarySchema, "people.generateSummary", { summary: "", keyTopics: [], relevanceScore: 0 });
-      await repo.updatePerson(ctx.user.id, input.personId, { aiSummary: parsed.summary });
-      return parsed;
+      try {
+        return await peopleService.generatePersonSummary(ctx.user.id, input.personId);
+      } catch (e: any) {
+        throw new TRPCError({ code: "NOT_FOUND", message: e.message });
+      }
     }),
 });

@@ -1,11 +1,11 @@
 /**
- * Drafts Router
+ * Drafts Router — thin layer delegating to draftsService
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
-import { callLLM } from "../services/llm.service";
+import * as draftsService from "../services/drafts.service";
 
 export const draftsRouter = router({
   list: protectedProcedure
@@ -18,6 +18,7 @@ export const draftsRouter = router({
     .query(async ({ ctx, input }) => {
       return repo.getDrafts(ctx.user.id, input ?? {});
     }),
+
   generate: protectedProcedure
     .input(z.object({
       personId: z.number(),
@@ -26,51 +27,19 @@ export const draftsRouter = router({
       channel: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const person = await repo.getPersonById(ctx.user.id, input.personId);
-      if (!person) throw new TRPCError({ code: "NOT_FOUND", message: "Person not found" });
-
-      const goals = await repo.getUserGoals(ctx.user.id);
-
-      const { data } = await callLLM({
-        promptModule: "outreach_draft",
-        params: {
-          messages: [
-            {
-              role: "system",
-              content: `You are a professional networking message writer. Generate a personalized outreach message. Return JSON: { "subject": "...", "body": "...", "tone": "${input.tone ?? "professional"}", "channel": "${input.channel ?? "email"}" }`,
-            },
-            {
-              role: "user",
-              content: `Person: ${person.fullName}, ${person.title ?? ""} at ${person.company ?? ""}. Location: ${person.location ?? "unknown"}. Summary: ${person.aiSummary ?? "N/A"}. Tags: ${JSON.stringify(person.tags ?? [])}.\nUser goals: ${JSON.stringify(goals)}\nContext: ${input.context ?? "General networking"}`,
-            },
-          ],
-          response_format: { type: "json_object" },
-        },
-        fallback: { subject: "Let's connect", body: `Hi ${person.fullName}, I'd love to connect and learn more about your work.`, tone: input.tone ?? "professional", channel: input.channel ?? "email" },
-        userId: ctx.user.id,
-        entityType: "person",
-        entityId: input.personId,
-      });
-
-      const draft = data as Record<string, string>;
-      const id = await repo.createDraft(ctx.user.id, {
-        personId: input.personId,
-        draftType: draft.channel ?? input.channel ?? "email",
-        subject: draft.subject,
-        body: draft.body,
-        tone: draft.tone ?? input.tone ?? "professional",
-        metadataJson: { generatedBy: "ai", context: input.context },
-      });
-
-      await repo.logActivity(ctx.user.id, {
-        activityType: "draft_generated",
-        title: `Generated draft for ${person.fullName}`,
-        entityType: "draft",
-        entityId: id ?? undefined,
-      });
-
-      return { id, ...draft };
+      try {
+        return await draftsService.generateOutreachDraft(
+          ctx.user.id,
+          input.personId,
+          input.tone ?? "professional",
+          input.context,
+          input.channel ?? "email"
+        );
+      } catch (e: any) {
+        throw new TRPCError({ code: "NOT_FOUND", message: e.message });
+      }
     }),
+
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
@@ -91,6 +60,7 @@ export const draftsRouter = router({
       }
       return { success: true };
     }),
+
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {

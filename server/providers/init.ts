@@ -3,8 +3,7 @@
  * Wires real LLM-backed providers into the registry based on feature flags.
  * Called once at server startup.
  */
-
-import { registerProvider, getFeatureFlags } from "./registry";
+import { registerProvider, getFeatureFlags, getProviderStatus } from "./registry";
 import {
   LLMDiscoveryProvider,
   LLMDraftProvider,
@@ -42,5 +41,11 @@ export function initializeProviders() {
     registerProvider("relationship", new LLMRelationshipProvider());
   }
 
-  console.log("[Providers] Initialized with flags:", JSON.stringify(flags));
+  // Daily brief
+  if (flags.USE_BACKGROUND_BRIEF) {
+    registerProvider("dailyBrief", new LLMDailyBriefProvider());
+  }
+
+  const status = getProviderStatus();
+  console.log("[Providers] Initialized:", JSON.stringify(status));
 }

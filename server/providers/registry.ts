@@ -1,13 +1,16 @@
 /**
- * Provider Registry + Feature Flags (#3, #4)
- * 
+ * Provider Registry + Feature Flags + Fallback Chains (#3, #4)
+ *
  * Central place to configure which provider implementations are active.
- * Allows swapping mock/real providers without changing business logic.
+ * Supports primary → fallback → graceful degradation for all providers.
  */
-
 import type {
-  DiscoveryProvider, DraftProvider, VoiceParserProvider,
-  OpportunityProvider, RelationshipProvider,
+  DiscoveryProvider,
+  DraftProvider,
+  VoiceParserProvider,
+  OpportunityProvider,
+  RelationshipProvider,
+  DailyBriefProvider,
 } from "./types";
 
 // ─── Feature Flags ──────────────────────────────────────────────
@@ -41,30 +44,115 @@ export function setFeatureFlags(overrides: Partial<FeatureFlags>) {
   _flags = { ..._flags, ...overrides };
 }
 
-// ─── Provider Registry ──────────────────────────────────────────
-interface ProviderRegistry {
+// ─── Provider Registry with Fallback Chains ─────────────────────
+export interface ProviderRegistry {
   discovery?: DiscoveryProvider;
   draft?: DraftProvider;
   voiceParser?: VoiceParserProvider;
   opportunity?: OpportunityProvider;
   relationship?: RelationshipProvider;
+  dailyBrief?: DailyBriefProvider;
 }
 
-const _registry: ProviderRegistry = {};
+type ProviderKey = keyof ProviderRegistry;
 
-export function registerProvider<K extends keyof ProviderRegistry>(
+// Primary registry
+const _primary: ProviderRegistry = {};
+// Fallback registry
+const _fallback: ProviderRegistry = {};
+
+export function registerProvider<K extends ProviderKey>(
   key: K,
-  provider: ProviderRegistry[K]
+  provider: ProviderRegistry[K],
+  options?: { fallback?: boolean }
 ) {
-  _registry[key] = provider;
+  if (options?.fallback) {
+    _fallback[key] = provider;
+  } else {
+    _primary[key] = provider;
+  }
 }
 
-export function getProvider<K extends keyof ProviderRegistry>(
+/**
+ * Get a provider with automatic fallback.
+ * Tries primary first, then fallback if primary is not registered.
+ */
+export function getProvider<K extends ProviderKey>(
   key: K
 ): ProviderRegistry[K] | undefined {
-  return _registry[key];
+  return _primary[key] ?? _fallback[key];
 }
 
-export function hasProvider(key: keyof ProviderRegistry): boolean {
-  return _registry[key] !== undefined;
+export function hasProvider(key: ProviderKey): boolean {
+  return _primary[key] !== undefined || _fallback[key] !== undefined;
+}
+
+/**
+ * Get a provider wrapped with try/catch fallback chain.
+ * Returns a proxy that tries primary, then fallback, then returns undefined.
+ */
+export function getProviderWithFallback<K extends ProviderKey>(
+  key: K
+): ProviderRegistry[K] | undefined {
+  const primary = _primary[key];
+  const fallback = _fallback[key];
+
+  if (!primary && !fallback) return undefined;
+  if (!primary) return fallback;
+  if (!fallback) return primary;
+
+  // Create a proxy that wraps each method with try/catch fallback
+  return new Proxy(primary, {
+    get(target: any, prop: string) {
+      const primaryFn = target[prop];
+      const fallbackFn = (fallback as any)[prop];
+
+      if (typeof primaryFn !== "function") return primaryFn;
+
+      return async (...args: unknown[]) => {
+        try {
+          return await primaryFn.apply(target, args);
+        } catch (err) {
+          console.warn(
+            `[Provider:${key}] Primary failed for ${prop}, trying fallback:`,
+            (err as Error).message
+          );
+          if (typeof fallbackFn === "function") {
+            try {
+              return await fallbackFn.apply(fallback, args);
+            } catch (fallbackErr) {
+              console.error(
+                `[Provider:${key}] Fallback also failed for ${prop}:`,
+                (fallbackErr as Error).message
+              );
+              throw fallbackErr;
+            }
+          }
+          throw err;
+        }
+      };
+    },
+  }) as ProviderRegistry[K];
+}
+
+/**
+ * List all registered providers and their status.
+ */
+export function getProviderStatus(): Record<string, { primary: boolean; fallback: boolean }> {
+  const keys: ProviderKey[] = [
+    "discovery",
+    "draft",
+    "voiceParser",
+    "opportunity",
+    "relationship",
+    "dailyBrief",
+  ];
+  const status: Record<string, { primary: boolean; fallback: boolean }> = {};
+  for (const key of keys) {
+    status[key] = {
+      primary: _primary[key] !== undefined,
+      fallback: _fallback[key] !== undefined,
+    };
+  }
+  return status;
 }
