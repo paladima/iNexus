@@ -70,6 +70,11 @@ export const listsRouter = router({
         listId: input.listId,
         tone: input.tone ?? "professional",
         context: input.context,
+      }, {
+        dedupeKey: `batch_outreach:${ctx.user.id}:list:${input.listId}`,
+        entityType: "list",
+        entityId: input.listId,
+        priority: 1,
       });
 
       await repo.logActivity(ctx.user.id, {

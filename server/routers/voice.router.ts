@@ -65,6 +65,35 @@ export const voiceRouter = router({
       );
     }),
 
+  editCapture: protectedProcedure
+    .input(z.object({
+      captureId: z.number(),
+      parsed: z.object({
+        people: z.array(z.object({
+          name: z.string(),
+          role: z.string().optional(),
+          company: z.string().optional(),
+          action: z.string().optional(),
+        })),
+        tasks: z.array(z.object({
+          title: z.string(),
+          priority: z.string().optional(),
+          dueDate: z.string().optional(),
+        })),
+        notes: z.array(z.object({
+          personName: z.string().optional(),
+          content: z.string(),
+        })),
+        reminders: z.array(z.object({
+          text: z.string(),
+          datetime: z.string().optional(),
+        })),
+      }),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return voiceService.editVoiceCapture(ctx.user.id, input.captureId, input.parsed);
+    }),
+
   history: protectedProcedure.query(async ({ ctx }) => {
     return repo.getVoiceCaptures(ctx.user.id);
   }),

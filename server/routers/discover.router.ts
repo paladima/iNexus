@@ -12,6 +12,7 @@ const personInputSchema = z.object({
   company: z.string().optional(),
   location: z.string().optional(),
   linkedinUrl: z.string().optional(),
+  websiteUrl: z.string().optional(),
   sourceType: z.string().optional(),
   relevanceScore: z.string().optional(),
 });

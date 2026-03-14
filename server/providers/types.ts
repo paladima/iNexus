@@ -4,16 +4,24 @@
  */
 
 // ─── Discovery Provider ────────────────────────────────────────
+
+/** Structured intent extracted from a raw user query. */
 export interface DiscoveryIntent {
   topic: string;
   role?: string;
   geo?: string;
   industry?: string;
   speaker?: boolean;
+  skills?: string[];
   negatives?: string[];
   queryVariants?: string[];
+  /** Original language detected (e.g. "ru", "en") */
+  originalLanguage?: string;
+  /** Normalized English version of the query */
+  normalizedQuery?: string;
 }
 
+/** A single person result from discovery. */
 export interface DiscoveryResult {
   fullName: string;
   title?: string;
@@ -26,18 +34,42 @@ export interface DiscoveryResult {
   scoring?: Record<string, number>;
   matchReasons?: string[];
   whyRelevant?: string;
+  /** Which query variant produced this result */
+  sourceQuery?: string;
   [key: string]: unknown;
 }
 
 /**
- * DiscoveryProvider — full pipeline: decompose → search → score.
- * Services call provider methods; provider owns the LLM interaction.
+ * DiscoveryProvider — full pipeline with stable contract:
+ *   1. normalizeQuery  — RU→EN, typo fix, skill/geo extraction
+ *   2. decomposeIntent — structured intent from normalized query
+ *   3. expandQueries   — 8-15 query variants from intent
+ *   4. search          — execute search for a single query variant
+ *   5. rerank          — score and rerank aggregated results
+ *   6. dedupe          — person-level deduplication
+ *
+ * Services orchestrate the pipeline; provider owns each step's LLM interaction.
  */
 export interface DiscoveryProvider {
+  /** Normalize raw query: translate non-EN, extract roles/skills/geo, fix typos */
+  normalizeQuery(rawQuery: string): Promise<{
+    normalized: string;
+    originalLanguage: string;
+    extractedRole?: string;
+    extractedSkills?: string[];
+    extractedGeo?: string;
+  }>;
+
+  /** Decompose a normalized query into structured intent */
   decomposeIntent(query: string, userGoals?: Record<string, unknown>): Promise<{
     intent: DiscoveryIntent;
     queryVariants: string[];
   }>;
+
+  /** Expand intent into 8-15 diverse query variants */
+  expandQueries(intent: DiscoveryIntent, baseVariants: string[]): Promise<string[]>;
+
+  /** Search for people matching a single query variant */
   search(
     query: string,
     intent: DiscoveryIntent,
@@ -45,6 +77,16 @@ export interface DiscoveryProvider {
     filters?: Record<string, unknown>,
     userGoals?: Record<string, unknown>
   ): Promise<DiscoveryResult[]>;
+
+  /** Rerank aggregated results from multiple query variants */
+  rerank(
+    results: DiscoveryResult[],
+    intent: DiscoveryIntent,
+    userGoals?: Record<string, unknown>
+  ): Promise<DiscoveryResult[]>;
+
+  /** Person-level deduplication across results */
+  dedupe(results: DiscoveryResult[]): DiscoveryResult[];
 }
 
 // ─── Draft Provider ────────────────────────────────────────────

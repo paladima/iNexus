@@ -5,7 +5,7 @@
 
 import { invokeLLM, type InvokeParams, type InvokeResult } from "../_core/llm";
 import { safeParseJson } from "../llmHelpers";
-import { logAiAction } from "../repositories/audit.repo";
+import { logAiAction } from "../repositories";
 import { z } from "zod";
 
 // Rate limiting state

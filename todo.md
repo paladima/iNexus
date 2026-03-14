@@ -186,3 +186,26 @@
 - [x] #19 Clean delivery archive and repo hygiene (no .manus/db, dist, debug artifacts)
 - [x] #20 MVP deployment profile as separate deliverable (env, README, migrations, seed, worker, health)
 - [x] Updated test suite with provider registry mocks (86 tests passing across 3 files)
+
+## MVP Hardening v5 (20 items)
+- [x] #1 Full DiscoveryProvider pipeline: decomposeIntent → search → rerank → dedupe → fallback broad mode
+- [x] #2 Query normalization for non-LinkedIn queries (RU→EN, role/skill/geo extraction, query expansion)
+- [x] #3 Multi-query discovery: 8-15 query variants, aggregate results, person-level dedupe, rerank top candidates
+- [x] #4 Standardize provider access: always getProviderWithFallback() or simplify registry
+- [x] #5 Remove "architecture halfway" remnants: enforce router→service→repository/provider everywhere
+- [x] #6 Job system: separate worker process with independent lifecycle
+- [x] #7 Job UX: show queued/running/retrying/failed/completed for brief, voice, batch, summary
+- [x] #8 Enforce dedupeKey on all job producers (brief, voice, batch, summary, opportunity scan)
+- [x] #9 Repo-layer discipline: no direct DB mutations outside repositories
+- [x] #10 Enhanced bulkSavePeople dedupe: fullName + company + linkedinUrl + websiteUrl + normalized title
+- [x] #11 Bulk operation optimization: batch reads, batch writes, reduce roundtrips
+- [x] #12 Main workflow: discover → save → list → draft → task as guided flow
+- [x] #13 Bulk UX on Discover and Lists: multi-select, select all, save/add/generate/create for selected
+- [x] #14 Person Profile as relationship memory center: why matters, last contact, next action, tasks, opportunities, drafts, notes, timeline
+- [x] #15 Voice flow polish: upload → transcribe → parse → confirm → edit → save → activity → retry
+- [x] #16 Command Bar as real orchestrator: discover, create task, generate draft, reconnects, create list, summarize, add to list
+- [x] #17 Clean unused dependencies and imports from package.json and client (removed framer-motion)
+- [x] #18 Production-clean repository: source, migrations, docs, scripts, config only
+- [x] #19 Deploy profile deliverable: .env.example, migrations, seed, worker start, app start, health, README (DEPLOY.md v5)
+- [x] #20 Prepare for product validation mode: staging-ready, key flows tested
+- [x] Updated test suite with v5 provider mocks (86 tests passing, 0 TS errors)

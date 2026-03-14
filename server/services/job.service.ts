@@ -7,7 +7,7 @@
  *   #8  - All DB access through repo layer
  */
 
-import * as jobRepo from "../repositories/jobs.repo";
+import * as jobRepo from "../repositories/jobs.repo"; // Direct import OK: job.service is infrastructure-level, not business logic
 
 type JobHandler = (jobId: number, userId: number, payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
 

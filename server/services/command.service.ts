@@ -145,7 +145,11 @@ Always include a helpful "response" message.`,
             const person = matchedPeople[0];
             const jobId = await enqueueJob(userId, "generate_summary", {
               personId: person.id,
-            }, { entityType: "person", entityId: person.id });
+            }, {
+              entityType: "person",
+              entityId: person.id,
+              dedupeKey: `generate_summary:${userId}:person:${person.id}`,
+            });
             actionResult = {
               personId: person.id,
               personName: person.fullName,
@@ -206,7 +210,12 @@ Always include a helpful "response" message.`,
             const jobId = await enqueueJob(userId, "batch_outreach", {
               listId,
               tone: "professional",
-            }, { entityType: "list", entityId: listId, priority: 1 });
+            }, {
+              entityType: "list",
+              entityId: listId,
+              priority: 1,
+              dedupeKey: `batch_outreach:${userId}:list:${listId}`,
+            });
             actionResult = {
               listId,
               listName: (list as any).name,
