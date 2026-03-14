@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
 import * as oppService from "../services/opportunities.service";
+import * as scoringService from "../services/opportunityScoring.service";
 
 export const opportunitiesRouter = router({
   list: protectedProcedure
@@ -94,5 +95,28 @@ export const opportunitiesRouter = router({
       } catch (e: any) {
         throw new TRPCError({ code: "NOT_FOUND", message: e.message });
       }
+    }),
+
+  // ─── v9 Pillar 2: Opportunity Scoring Engine ──────────────
+  ranked: protectedProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return scoringService.rankOpportunitiesForUser(ctx.user.id, input?.limit ?? 20);
+    }),
+
+  topActions: protectedProcedure
+    .input(z.object({ count: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return scoringService.getTopActions(ctx.user.id, input?.count ?? 3);
+    }),
+
+  markActed: protectedProcedure
+    .input(z.object({
+      opportunityId: z.number(),
+      action: z.enum(["acted", "archived", "ignored"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { markOpportunityActed } = await import("../services/action.service");
+      return markOpportunityActed(ctx.user.id, input.opportunityId, input.action);
     }),
 });

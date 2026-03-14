@@ -278,3 +278,26 @@
 - [x] #19 Person Profile as relationship center — AI summary, last contact, next action, tasks, opportunities, drafts, notes, warm paths, reconnect warning
 - [x] #20 Deploy profile — DEPLOY.md, README.md, /api/health, pnpm worker/worker:once/worker:dev, pnpm db:push
 - [x] Updated test suite with v8 fuzzy matching tests (110 tests passing: 21 fuzzyMatch, 23 llmHelpers, 65 routers, 1 auth)
+
+## v9 — Three Architectural Pillars
+
+### Pillar 1: Unified Action Layer
+- [x] Create action.service.ts with entity-agnostic action methods (createTaskFromEntity, generateDraftFromEntity, savePersonFromDiscovery, createIntroRequest, markOpportunityActed)
+- [x] Create entity adapters: fromDiscoveryResult, fromPerson, fromOpportunity, fromVoiceParse with getAvailableActions
+- [x] Create shared ActionRail UI component with consistent actions across all cards (Save, Add to List, Draft, Task, Mark Contacted, Ask for Intro, Archive)
+- [x] Integrate ActionRail into Discover cards, People list, Person Profile, Opportunity cards, List items
+
+### Pillar 2: Opportunity Scoring Engine
+- [x] Add scoring fields to opportunities table (score, priority, expiresAt, reasonJson) — uses existing score column + runtime scoring
+- [x] Create opportunityScoring.service.ts with scoreOpportunity(), rankOpportunitiesForUser(), getTopActions()
+- [x] Implement scoring formula: goalFit(0.30) + signalRecency(0.25) + relationshipStrength(0.25) + actionability(0.20)
+- [x] Add TopActions widget to Dashboard with rank, title, whyItMatters, suggestedAction, score
+- [x] Add tRPC endpoints: opportunities.ranked, opportunities.topActions, opportunities.markActed
+
+### Pillar 3: Warm Path Engine
+- [x] Enhance relationships table — uses existing relationship_type, confidence columns + runtime evidence
+- [x] Add connection hints detection: same_company, same_list, shared_tags, same_geography, known_connection
+- [x] Create relationship.service.ts with findWarmPaths(), suggestIntroductions(), buildIntroRequest()
+- [x] Integrate WarmPaths component into Person Profile (replaces old warm paths section)
+- [x] Add "Ask for Intro" button in WarmPaths component → relationships.buildIntroRequest → LLM draft
+- [x] Updated test suite with v9 pillar tests (127 tests passing: 17 v9pillars, 21 fuzzyMatch, 23 llmHelpers, 65 routers, 1 auth)

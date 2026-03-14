@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import TopActions from "@/components/TopActions";
 
 export default function Home() {
   const { user } = useAuth();
@@ -114,6 +115,9 @@ export default function Home() {
           </Card>
         ))}
       </div>
+
+      {/* Top Actions Today — v9 Pillar 2 */}
+      <TopActions />
 
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Daily Brief */}

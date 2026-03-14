@@ -28,6 +28,7 @@ import {
 import { useState, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
+import WarmPaths from "@/components/WarmPaths";
 
 export default function PersonProfile() {
   const params = useParams<{ id: string }>();
@@ -38,7 +39,6 @@ export default function PersonProfile() {
   const utils = trpc.useUtils();
   const { data: person, isLoading } = trpc.people.getById.useQuery({ id: personId });
   const { data: relationships } = trpc.relationships.list.useQuery({ personId });
-  const { data: warmPaths } = trpc.relationships.warmPaths.useQuery({ personId });
   const { data: opportunities } = trpc.opportunities.list.useQuery({ personId });
   const { data: tasks } = trpc.tasks.list.useQuery({});
   const { data: drafts } = trpc.drafts.list.useQuery({});
@@ -332,37 +332,8 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {/* Warm Paths */}
-          {warmPaths && warmPaths.length > 0 && (
-            <Card className="border-primary/20">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Route className="h-4 w-4 text-primary" /> Warm Paths
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                {warmPaths.map((path: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">via</span>
-                    <button
-                      className="text-primary hover:underline font-medium"
-                      onClick={() => setLocation(`/people/${path.intermediary.id}`)}
-                    >
-                      {path.intermediary.fullName}
-                    </button>
-                    <Badge variant="outline" className="text-xs capitalize">
-                      {path.relationshipType}
-                    </Badge>
-                    {path.confidence && (
-                      <span className="text-xs text-muted-foreground">
-                        ({Math.round(parseFloat(path.confidence) * 100)}%)
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Warm Paths — v9 Pillar 3 */}
+          <WarmPaths personId={personId} personName={person.fullName} />
 
           {/* Connections */}
           {relationships && relationships.length > 0 && (
