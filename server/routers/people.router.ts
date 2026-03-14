@@ -7,6 +7,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
 import * as peopleService from "../services/people.service";
 import * as peopleMerge from "../services/people.merge";
+import * as ingestService from "../services/ingest.service";
 
 export const peopleRouter = router({
   list: protectedProcedure
@@ -119,6 +120,13 @@ export const peopleRouter = router({
     .input(z.object({ personId: z.number(), threshold: z.number().optional() }))
     .query(async ({ ctx, input }) => {
       return peopleMerge.findDuplicates(ctx.user.id, input.personId, input.threshold);
+    }),
+
+  /** AI Contact Ingest: paste anything → extract → dedupe → preview (v19) */
+  ingest: protectedProcedure
+    .input(z.object({ rawInput: z.string().min(1).max(5000) }))
+    .mutation(async ({ ctx, input }) => {
+      return ingestService.ingestContact(ctx.user.id, input.rawInput);
     }),
 
   /** Merge two people: survivor absorbs merged record (#15 v13) */

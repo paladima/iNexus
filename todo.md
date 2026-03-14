@@ -554,3 +554,27 @@
 - [x] #17 Rate limits: checkRateLimit/enforceRateLimit in utils/rateLimit.ts, applied to discover (10/min), voice (5/min), drafts (20/min)
 - [x] #20 docs/ALPHA_CHECKLIST.md with Infrastructure, Security, Performance, UX, Analytics sections
 - [x] 279 tests passing across 14 test files, 0 TS errors
+
+## v19 — AI Contact Ingest (Replace Manual Form)
+
+### Backend
+- [x] Created server/services/ingest.service.ts with detect→extract→dedupe pipeline
+- [x] Input type detection: linkedin_url, email, phone, free_text via regex (image/voice deferred)
+- [x] LLM extraction via callLLM with json_schema response_format, Zod validation, fallback
+- [x] Dedupe via matchPerson (linkedin, website, exact name, fuzzy name layers)
+- [x] tRPC endpoint: people.ingest (rawInput string → IngestResult)
+
+### Frontend
+- [x] Replaced manual form with AI Contact Input (Textarea paste box with Cmd+Enter)
+- [x] Input hints: LinkedIn URL, email, phone, name+details with icons
+- [x] "Analyze Contact" button with animated spinner loading state
+- [x] Preview card: avatar, name, title@company, email, phone, linkedin, location with icons
+- [x] Confidence badges (High/Medium/Low) overall + per-field
+- [x] Duplicate warning banner with match type and existing person name
+- [x] "Save Contact" + "Edit" (pencil) toggle for manual adjustment before save
+- [x] "or enter manually" link preserves full manual form as fallback
+- [x] "Try different input" back link from preview to input step
+
+### Tests
+- [x] 13 unit tests in v19ingest.test.ts: detectInputType (6 cases), type shapes, exports
+- [x] 292 tests passing across 15 test files, 0 TS errors

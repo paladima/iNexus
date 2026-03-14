@@ -6,6 +6,8 @@ iNexus is a relationship intelligence tool that helps professionals discover, ma
 
 **Discovery Engine** — Multi-query AI search with intent decomposition, RU/EN normalization, 8-15 query variants, skill synonym expansion (23 role + 23 skill groups), and 6-axis relevance scoring. Includes broad fallback mode when narrow search yields few results.
 
+**AI Contact Ingest** — Paste-anything contact input replacing traditional forms. Supports LinkedIn URLs, email addresses, phone numbers, and free text. LLM extracts structured fields (name, title, company, email, phone, location, LinkedIn) with per-field confidence scores. Automatic dedup check via PersonMatcher before save. Preview card with edit toggle and manual fallback.
+
 **People CRM** — Contact management with tags, notes, interaction history, relationship mapping, and warm path detection. Enhanced deduplication via PersonMatcher (LinkedIn URL, website, name+company, fuzzy Levenshtein). Duplicate detection and merge support.
 
 **Relationship Graph** — BFS multi-hop intro path discovery. Builds adjacency graph from explicit relationships and implicit connections (same company, same list, shared tags, same geography). Finds shortest intro chains: You → Alex → Mark → John with configurable max hops.
