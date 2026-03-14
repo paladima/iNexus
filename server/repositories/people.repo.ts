@@ -15,6 +15,25 @@ export async function createPerson(userId: number, data: {
   return result[0].insertId;
 }
 
+/**
+ * Batch insert multiple people at once (#15 v12).
+ * Returns array of inserted IDs. More efficient than loop-insert for non-dedup cases.
+ */
+export async function bulkCreatePeople(userId: number, records: Array<{
+  fullName: string; firstName?: string; lastName?: string; title?: string;
+  company?: string; location?: string; linkedinUrl?: string; websiteUrl?: string;
+  email?: string; phone?: string; sourceType?: string; sourceUrl?: string;
+  tags?: string[]; status?: string; relevanceScore?: string;
+}>): Promise<number[]> {
+  const db = await getDb();
+  if (!db || records.length === 0) return [];
+  const values = records.map((r) => ({ userId, ...r }));
+  // MySQL batch insert — returns only first insertId, so we compute the rest
+  const result = await db.insert(people).values(values);
+  const firstId = result[0].insertId;
+  return Array.from({ length: records.length }, (_, i) => firstId + i);
+}
+
 export async function getPeople(userId: number, opts?: {
   search?: string; status?: string; tag?: string; limit?: number; offset?: number;
 }) {

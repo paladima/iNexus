@@ -45,8 +45,27 @@ export function buildPersonIndex(people: PersonCandidate[]) {
   return { nameCompanyIndex, linkedinIndex, websiteIndex };
 }
 
-function normalizeUrl(url: string): string {
-  return url.toLowerCase().replace(/\/$/, "").replace(/^https?:\/\//, "").replace(/^www\./, "");
+/**
+ * Canonicalize URL for dedup matching (#13 v12):
+ * - Strip protocol (http/https)
+ * - Strip www prefix
+ * - Strip trailing slashes
+ * - Strip query parameters and fragments
+ * - Normalize LinkedIn profile URLs (remove locale suffixes)
+ */
+export function normalizeUrl(url: string): string {
+  let u = url.toLowerCase().trim();
+  // Strip protocol
+  u = u.replace(/^https?:\/\//, "");
+  // Strip www
+  u = u.replace(/^www\./, "");
+  // Strip query params and fragments
+  u = u.replace(/[?#].*$/, "");
+  // Strip trailing slashes
+  u = u.replace(/\/+$/, "");
+  // Normalize LinkedIn: remove locale suffixes like /en, /ru
+  u = u.replace(/\/(?:en|ru|fr|de|es|pt|it|nl|ja|ko|zh-cn|zh-tw)$/i, "");
+  return u;
 }
 
 /**

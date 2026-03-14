@@ -17,6 +17,7 @@ import { getProviderWithFallback } from "../providers/registry";
 import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
 import { buildPersonIndex, matchPerson, type PersonCandidate } from "../utils/personMatcher";
 import type { DiscoveryProvider, DiscoveryResult, DiscoveryIntent } from "../providers/types";
+import { expandQueryWithSynonyms } from "../utils/skillSynonyms";
 
 const MIN_RESULTS_THRESHOLD = 3;
 const MAX_QUERY_VARIANTS = 12;
@@ -62,7 +63,19 @@ export async function executeSearch(
 
   // Step 3: Expand to 8-15 query variants (#3)
   const expandedVariants = await provider.expandQueries(intent, baseVariants);
-  const queryVariants = expandedVariants.slice(0, MAX_QUERY_VARIANTS);
+
+  // Step 3b: Augment with static skill/role synonym variants (#8 v12)
+  const synonymVariants: string[] = [];
+  for (const variant of expandedVariants.slice(0, 3)) {
+    const synExpanded = expandQueryWithSynonyms(variant, 3);
+    for (const sv of synExpanded) {
+      if (!expandedVariants.includes(sv) && !synonymVariants.includes(sv)) {
+        synonymVariants.push(sv);
+      }
+    }
+  }
+  const allVariants = [...expandedVariants, ...synonymVariants];
+  const queryVariants = allVariants.slice(0, MAX_QUERY_VARIANTS);
 
   // Step 4: Persist search query
   const queryId = await repo.createSearchQuery(userId, query, filters ?? {}, {

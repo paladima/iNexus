@@ -19,6 +19,8 @@ export interface DiscoveryIntent {
   originalLanguage?: string;
   /** Normalized English version of the query */
   normalizedQuery?: string;
+  /** Confidence score for the parsed intent (0.0-1.0) */
+  confidence?: number;
 }
 
 /** A single person result from discovery. */

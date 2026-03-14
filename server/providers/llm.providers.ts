@@ -134,10 +134,13 @@ Return JSON:
     "skills": ["..."],
     "speaker": false,
     "negatives": [],
-    "domain": "..."
+    "domain": "...",
+    "confidence": 0.85
   },
   "queryVariants": ["variant1", "variant2", "variant3"]
-}`,
+}
+
+confidence is 0.0-1.0: how confident you are in the parsed intent. Low confidence means the query is ambiguous or unclear.`,
           },
           {
             role: "user",
