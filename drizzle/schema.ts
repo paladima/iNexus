@@ -345,3 +345,24 @@ export const aiAuditLog = mysqlTable("ai_audit_log", {
 ]);
 
 export type AiAuditEntry = typeof aiAuditLog.$inferSelect;
+
+
+// ─── Unlinked Notes ─────────────────────────────────────────────
+// Notes from voice or other sources that couldn't be linked to a person (#13 v11)
+export const unlinkedNotes = mysqlTable("unlinked_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  content: text("content").notNull(),
+  source: varchar("source", { length: 32 }).default("voice").notNull(),
+  personNameHint: varchar("personNameHint", { length: 255 }),
+  captureId: int("captureId"),
+  linkedPersonId: int("linkedPersonId"),
+  linkedAt: timestamp("linkedAt"),
+  status: varchar("status", { length: 32 }).default("unlinked").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_unlinked_notes_userId").on(table.userId),
+  index("idx_unlinked_notes_status").on(table.status),
+]);
+
+export type UnlinkedNote = typeof unlinkedNotes.$inferSelect;

@@ -1,15 +1,16 @@
 /**
- * Command Service (#1-3 v10)
- * Pure orchestration layer: routes intents to service layer only.
- * No direct repo calls for business logic — delegates to services.
- * Only uses repo for lightweight reads (getPeople search, getLists, logActivity).
+ * Command Service (#1-2 v11)
+ * Pure orchestration layer: routes intents to service layer ONLY.
+ * Zero direct repo calls — all business logic delegated to services.
  */
 import { callLLM } from "./llm.service";
 import { enqueueJob } from "./job.service";
 import * as discoverService from "./discover.service";
 import * as peopleService from "./people.service";
 import * as draftsService from "./drafts.service";
-import * as repo from "../repositories";
+import * as tasksService from "./tasks.service";
+import * as listsService from "./lists.service";
+import * as activityService from "./activity.service";
 import { findPersonByNameFuzzy, type PersonCandidate } from "../utils/personMatcher";
 
 interface CommandResult {
@@ -20,26 +21,14 @@ interface CommandResult {
 }
 
 /**
- * Helper: find a person by name using fuzzy matching (#9)
+ * Helper: find a person by name using fuzzy matching via people service (#2, #9)
  */
 async function findPersonByName(userId: number, name: string): Promise<PersonCandidate | null> {
-  const { items } = await repo.getPeople(userId, { search: name, limit: 20 });
+  const { items } = await peopleService.searchPeople(userId, name);
   return findPersonByNameFuzzy(name, items as PersonCandidate[]);
 }
 
-/**
- * Helper: find a list by name (case-insensitive partial match)
- */
-async function findListByName(userId: number, name: string) {
-  const lists = await repo.getLists(userId);
-  return lists.find((l: any) =>
-    l.name?.toLowerCase().includes(name.toLowerCase())
-  ) as any | null;
-}
-
 export async function executeCommand(userId: number, command: string): Promise<CommandResult> {
-  const goals = await repo.getUserGoals(userId);
-
   // Step 1: Classify intent via LLM
   const { data } = await callLLM<Record<string, unknown>>({
     promptModule: "command_bar",
@@ -65,7 +54,7 @@ Always include a helpful "response" message.`,
         },
         {
           role: "user",
-          content: `Command: "${command}"\nUser goals: ${JSON.stringify(goals)}`,
+          content: `Command: "${command}"`,
         },
       ],
       response_format: { type: "json_object" },
@@ -81,8 +70,7 @@ Always include a helpful "response" message.`,
 
   const result = data as { intent: string; params: Record<string, unknown>; response: string };
 
-  // Step 2: Route to appropriate service
-  // Business logic goes through services; only lightweight reads use repo directly.
+  // Step 2: Route to appropriate service — NO direct repo calls
   let actionResult: Record<string, unknown> = {};
 
   try {
@@ -101,7 +89,7 @@ Always include a helpful "response" message.`,
 
       case "search_people": {
         const query = String(result.params?.query ?? command);
-        const { items: foundPeople } = await repo.getPeople(userId, { search: query, limit: 10 });
+        const { items: foundPeople } = await peopleService.searchPeople(userId, query);
         actionResult = {
           people: foundPeople.map((p: any) => ({
             id: p.id,
@@ -121,34 +109,21 @@ Always include a helpful "response" message.`,
             const person = await findPersonByName(userId, String(result.params.personName));
             if (person) personId = person.id;
           }
-          // Delegate to repo for simple task creation (no service wrapper needed for single-task create)
-          const id = await repo.createTask(userId, {
+          const id = await tasksService.createTask(userId, {
             title: String(result.params.title),
             priority: (result.params.priority as string) ?? "medium",
             dueAt: result.params.dueDate ? new Date(String(result.params.dueDate)) : undefined,
             personId,
           });
           actionResult = { taskId: id, created: true };
-          await repo.logActivity(userId, {
-            activityType: "task_created",
-            title: `Created task via command: ${result.params.title}`,
-            entityType: "task",
-            entityId: id ?? undefined,
-          });
         }
         break;
       }
 
       case "create_list": {
         if (result.params?.name) {
-          const id = await repo.createList(userId, String(result.params.name));
+          const id = await listsService.createList(userId, String(result.params.name));
           actionResult = { listId: id, created: true };
-          await repo.logActivity(userId, {
-            activityType: "list_created",
-            title: `Created list via command: ${result.params.name}`,
-            entityType: "list",
-            entityId: id ?? undefined,
-          });
         }
         break;
       }
@@ -182,7 +157,6 @@ Always include a helpful "response" message.`,
         if (result.params?.personName) {
           const person = await findPersonByName(userId, String(result.params.personName));
           if (person) {
-            // Delegate to drafts service
             const draft = await draftsService.generateOutreachDraft(
               userId,
               person.id,
@@ -203,7 +177,7 @@ Always include a helpful "response" message.`,
       }
 
       case "show_reconnects": {
-        const stale = await repo.getPeopleNeedingReconnect(userId, 30);
+        const stale = await activityService.getPeopleNeedingReconnect(userId, 30);
         actionResult = {
           contacts: stale.map((p: any) => ({
             id: p.id,
@@ -218,7 +192,7 @@ Always include a helpful "response" message.`,
 
       case "batch_draft": {
         if (result.params?.listName) {
-          const list = await findListByName(userId, String(result.params.listName));
+          const list = await listsService.findListByName(userId, String(result.params.listName));
           if (list) {
             const jobId = await enqueueJob(userId, "batch_outreach", {
               listId: list.id,
@@ -246,9 +220,8 @@ Always include a helpful "response" message.`,
       case "add_to_list": {
         if (result.params?.personName && result.params?.listName) {
           const person = await findPersonByName(userId, String(result.params.personName));
-          const list = await findListByName(userId, String(result.params.listName));
+          const list = await listsService.findListByName(userId, String(result.params.listName));
           if (person && list) {
-            // Delegate to discover service for consistent add-to-list logic
             await discoverService.bulkAddToList(userId, list.id, [person.id]);
             actionResult = {
               personId: person.id,
@@ -274,8 +247,8 @@ Always include a helpful "response" message.`,
     actionResult = { error: (err as Error).message };
   }
 
-  // Step 3: Log command execution
-  await repo.logActivity(userId, {
+  // Step 3: Log command execution via activity service
+  await activityService.logActivity(userId, {
     activityType: "command_executed",
     title: `Command: ${command}`,
     metadataJson: { intent: result.intent, params: result.params },

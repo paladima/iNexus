@@ -7,3 +7,7 @@ export * as opportunitiesService from "./opportunities.service";
 export * as voiceService from "./voice.service";
 export * as commandService from "./command.service";
 export * as dashboardService from "./dashboard.service";
+export * as tasksService from "./tasks.service";
+export * as listsService from "./lists.service";
+export * as activityService from "./activity.service";
+export * as unlinkedNotesService from "./unlinkedNotes.service";

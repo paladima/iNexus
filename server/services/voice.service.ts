@@ -135,16 +135,21 @@ export async function confirmVoiceActions(
           linked = true;
         }
       }
-      // If no person found or no personName, save as unlinked activity note (#14)
+      // If no person found or no personName, save to unlinked_notes table (#13 v11)
       if (!linked) {
+        await repo.createUnlinkedNote(userId, {
+          content: n.content,
+          source: "voice",
+          personNameHint: n.personName ?? undefined,
+          captureId,
+        });
         await repo.logActivity(userId, {
           activityType: "voice_note_unlinked",
           title: n.personName
-            ? `Voice note (unlinked — "${n.personName}" not found): ${n.content.slice(0, 80)}`
-            : `Voice note: ${n.content.slice(0, 100)}`,
+            ? `Voice note saved (unlinked — "${n.personName}" not found)`
+            : `Voice note saved (unlinked)`,
           metadataJson: {
-            content: n.content,
-            personName: n.personName ?? null,
+            personNameHint: n.personName ?? null,
             source: "voice",
             captureId,
           },

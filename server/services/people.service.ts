@@ -85,6 +85,14 @@ export async function getPersonProfile(userId: number, personId: number) {
   };
 }
 
+export async function searchPeople(
+  userId: number,
+  query: string,
+  limit: number = 10
+) {
+  return repo.getPeople(userId, { search: query, limit });
+}
+
 export async function savePerson(
   userId: number,
   data: {

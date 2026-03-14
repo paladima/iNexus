@@ -100,6 +100,7 @@ Key variables:
 | `BUILT_IN_FORGE_API_URL` | Forge API for LLM/storage |
 | `BUILT_IN_FORGE_API_KEY` | Forge API auth token |
 | `WORKER_CONCURRENCY` | Max concurrent jobs (default: 3) |
+| `ENABLE_WORKER` | Set to `true` to run job processor in-process with app server (default: `false` in production, `true` in development) |
 
 ## Scripts Reference
 

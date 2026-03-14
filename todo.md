@@ -324,3 +324,26 @@
 - [x] #19 .gitignore covers .manus/, .manus-logs/, .webdev/, client/public/__manus__/, dist/, build/ — verified clean
 - [x] #20 Deploy-ready: DEPLOY.md, README.md, .env.example, /api/health, pnpm worker scripts, pnpm db:push migration
 - [x] Updated test suite with v10 PersonMatcher tests (140 tests passing: 13 personMatcher, 21 fuzzyMatch, 17 v9pillars, 23 llmHelpers, 65 routers, 1 auth)
+
+## v11 — Code Review Fixes (20 items)
+- [x] #1 Rewrote command.service.ts — zero direct repo calls, delegates to tasksService, listsService, activityService, discoverService, peopleService, draftsService
+- [x] #2 Created tasks.service.ts, lists.service.ts (with findListByName), activity.service.ts; command.service uses findPersonByNameFuzzy from personMatcher
+- [x] #3 Added onboardingRouter (from auth.router) and settingsRouter (from activity.router) to routers/index.ts barrel
+- [x] #4 Discovery broad mode: generateBroadFallbackQueries with 6 strategies (verified since v6)
+- [x] #5 Query expansion handles all domains via LLM-driven expandQueries (verified since v6)
+- [x] #6 Discover UI shows intent analysis panel with normalized query, expanded roles, broad mode indicator (verified since v6)
+- [x] #7 Main workflow: discover → multi-select → save → add to list → generate drafts → create tasks (verified since v7)
+- [x] #8 Bulk UX: checkbox per card, Select All, Save, Add to List (ListPickerDialog), Generate Drafts, Create Tasks (verified since v7)
+- [x] #9 Dedupe: 4-layer matching via PersonMatcher (LinkedIn → Website → exact name+company → fuzzy Levenshtein) (verified since v10)
+- [x] #10 PersonMatcher utility in utils/personMatcher.ts, used by discover.service, people.service, voice.service, command.service (verified since v10)
+- [x] #11 Voice flow: full review/edit UX with transcript editing, item editing, remove items, partial confirm (verified since v6)
+- [x] #12 Voice person linking uses isFuzzyNameMatch for better resolution (verified since v8)
+- [x] #13 Created unlinked_notes table, unlinkedNotes.repo.ts, unlinkedNotes.service.ts, voice endpoints (unlinkedNotes, linkNote, deleteNote), UnlinkedNotes page at /voice/unlinked
+- [x] #14 Voice state machine: VoiceStep type = idle|recording|processing|review|saving|saved|error (verified since v6)
+- [x] #15 Worker startup gated by ENABLE_WORKER env var in production; development mode auto-starts for convenience
+- [x] #16 Created JobStatusBadge component with polling, progress display, cancel button, retry info — reusable across all job-triggering UIs
+- [x] #17 dedupeKey audit: all producers use userId+jobType+entityId pattern (verified since v7)
+- [x] #18 Person Profile: AI summary, last contact, next action, tasks, opps, drafts, notes, warm paths, reconnect warning (verified since v6)
+- [x] #19 .gitignore covers all artifacts (verified since v7)
+- [x] #20 DEPLOY.md updated with ENABLE_WORKER docs, README.md, .env.example, /api/health, worker scripts (verified since v7)
+- [x] Updated test suite with v11 tests (151 tests passing: 11 v11fixes, 13 personMatcher, 21 fuzzyMatch, 17 v9pillars, 23 llmHelpers, 65 routers, 1 auth)

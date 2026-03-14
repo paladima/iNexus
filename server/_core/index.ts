@@ -73,12 +73,19 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
-    // Start background workers
+    // Start background workers (lightweight periodic tasks)
     startWorkers();
-    // Initialize providers, register job handlers, start job processor
+    // Initialize providers and register job handlers
     initializeProviders();
     registerAllHandlers();
-    startJobProcessor();
+    // Start job processor only if ENABLE_WORKER is set or in development mode (#15 v11)
+    // In production, run `pnpm worker` as a separate process instead
+    if (process.env.ENABLE_WORKER === "true" || process.env.NODE_ENV === "development") {
+      startJobProcessor();
+      console.log("[Server] Job processor started (in-process mode)");
+    } else {
+      console.log("[Server] Job processor NOT started — run 'pnpm worker' separately");
+    }
   });
 }
 

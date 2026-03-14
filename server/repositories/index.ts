@@ -17,3 +17,4 @@ export * from "./interactions.repo";
 export * from "./dashboard.repo";
 export * from "./jobs.repo";
 export * from "./audit.repo";
+export * from "./unlinkedNotes.repo";

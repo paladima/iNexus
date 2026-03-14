@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
 import * as voiceService from "../services/voice.service";
+import * as unlinkedNotesService from "../services/unlinkedNotes.service";
 
 export const voiceRouter = router({
   uploadAudio: protectedProcedure
@@ -102,5 +103,29 @@ export const voiceRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       return repo.getVoiceCaptureById(ctx.user.id, input.id);
+    }),
+
+  /** Unlinked notes management (#13 v11) */
+  unlinkedNotes: protectedProcedure
+    .input(z.object({
+      status: z.string().optional(),
+      limit: z.number().optional(),
+    }).optional().default({}))
+    .query(async ({ ctx, input }) => {
+      return unlinkedNotesService.getUnlinkedNotes(ctx.user.id, input);
+    }),
+
+  linkNote: protectedProcedure
+    .input(z.object({ noteId: z.number(), personId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await unlinkedNotesService.linkNoteToPerson(ctx.user.id, input.noteId, input.personId);
+      return { linked: true };
+    }),
+
+  deleteNote: protectedProcedure
+    .input(z.object({ noteId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await unlinkedNotesService.deleteNote(ctx.user.id, input.noteId);
+      return { deleted: true };
     }),
 });

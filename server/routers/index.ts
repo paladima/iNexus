@@ -1,8 +1,8 @@
 /**
  * Barrel export for all split routers (#9).
  */
-export { activityRouter } from "./activity.router";
-export { authRouter } from "./auth.router";
+export { activityRouter, settingsRouter } from "./activity.router";
+export { authRouter, onboardingRouter } from "./auth.router";
 export { commandRouter } from "./command.router";
 export { dashboardRouter } from "./dashboard.router";
 export { discoverRouter } from "./discover.router";
