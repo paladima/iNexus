@@ -1,0 +1,8 @@
+{
+  "query": "CREATE INDEX `idx_people_userId` ON `people` (`userId`);\nCREATE INDEX `idx_people_userId_fullName` ON `people` (`userId`,`fullName`);\nCREATE INDEX `idx_person_notes_personId` ON `person_notes` (`personId`);\nCREATE INDEX `idx_search_queries_userId` ON `search_queries` (`userId`);\nCREATE INDEX `idx_search_results_queryId` ON `search_results` (`searchQueryId`);\nCREATE INDEX `idx_tasks_userId_status_due` ON `tasks` (`userId`,`status`,`dueAt`);\nCREATE INDEX `idx_tasks_personId` ON `tasks` (`personId`);\nCREATE INDEX `idx_user_goals_userId` ON `user_goals` (`userId`);\nCREATE INDEX `idx_voice_captures_userId` ON `voice_captures` (`userId`);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute CREATE INDEX `idx_people_userId` ON `people` (`userId`);\nCREATE INDEX `idx_people_userId_fullName` ON `people` (`userId`,`fullName`);\nCREATE INDEX `idx_person_notes_personId` ON `person_notes` (`personId`);\nCREATE INDEX `idx_search_queries_userId` ON `search_queries` (`userId`);\nCREATE INDEX `idx_search_results_queryId` ON `search_results` (`searchQueryId`);\nCREATE INDEX `idx_tasks_userId_status_due` ON `tasks` (`userId`,`status`,`dueAt`);\nCREATE INDEX `idx_tasks_personId` ON `tasks` (`personId`);\nCREATE INDEX `idx_user_goals_userId` ON `user_goals` (`userId`);\nCREATE INDEX `idx_voice_captures_userId` ON `voice_captures` (`userId`);",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'acfgcxfxutlsm6tkpdotrh.people' doesn't exist"
+  ]
+}

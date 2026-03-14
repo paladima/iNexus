@@ -1,0 +1,37 @@
+{
+  "query": "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();",
+  "rows": [
+    {
+      "TABLE_NAME": "activity_log"
+    },
+    {
+      "TABLE_NAME": "drafts"
+    },
+    {
+      "TABLE_NAME": "users"
+    },
+    {
+      "TABLE_NAME": "interactions"
+    },
+    {
+      "TABLE_NAME": "daily_briefs"
+    },
+    {
+      "TABLE_NAME": "lists"
+    },
+    {
+      "TABLE_NAME": "__drizzle_migrations"
+    },
+    {
+      "TABLE_NAME": "list_people"
+    },
+    {
+      "TABLE_NAME": "opportunities"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\nactivity_log\ndrafts\nusers\ninteractions\ndaily_briefs\nlists\n__drizzle_migrations\nlist_people\nopportunities\n",
+  "stderr": "",
+  "execution_time_ms": 102
+}
