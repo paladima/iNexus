@@ -53,7 +53,8 @@ Routers → Action Registry → Services → Repositories → Database
 - **Database**: MySQL 8 / TiDB
 - **AI**: LLM-powered providers for discovery, drafts, voice parsing, opportunities
 - **Observability**: Product analytics (14 event types), performance logging with configurable thresholds
-- **Testing**: Vitest (258 tests across 13 test files)
+- **Security**: Rate limiting (discover 10/min, voice 5/min, drafts 20/min), ownership validation on all mutations
+- **Testing**: Vitest (279 tests across 14 test files)
 
 ## Getting Started
 
@@ -69,7 +70,7 @@ pnpm dev
 
 ```
 client/src/          Frontend (React + Tailwind)
-  pages/             Page components (14 pages)
+  pages/             Page components (15 pages incl. Jobs monitoring)
   components/        Reusable UI (TopActions, OpportunityRadar, DailyBriefWidget,
                      WarmPaths, IntroPathVisualizer, ActionRail, JobStatusBadge)
 server/              Backend (Express + tRPC)
@@ -78,7 +79,7 @@ server/              Backend (Express + tRPC)
   services/          Business logic layer (15 services)
   repositories/      Database access layer (14 repos)
   providers/         AI provider implementations
-  utils/             Shared utilities (personMatcher, fuzzyMatch, skillSynonyms)
+  utils/             Shared utilities (personMatcher, fuzzyMatch, skillSynonyms, rateLimit, perfLogger)
   _core/             Framework plumbing
 drizzle/             Database schema & migrations
 shared/              Shared types & constants
@@ -88,6 +89,7 @@ shared/              Shared types & constants
 
 | Version | Focus | Tests |
 |---------|-------|-------|
+| v18 | Stabilization II: rate limits, Jobs page, bulk guardrails, seed data, alpha checklist | 279 |
 | v17 | Stabilization: smoke tests, analytics events, UX polish, perf logging | 258 |
 | v16 | Unified Action Registry + Workflow Engine, 7 core actions, useAction hook | 244 |
 | v15 | Voice ambiguity resolution, ENV reference docs | 219 |

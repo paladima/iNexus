@@ -14,9 +14,19 @@ import {
   ChevronDown, ChevronUp, BarChart3, Languages, AlertTriangle,
   ListPlus, FileText, CheckSquare, Users, CalendarPlus,
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { ListPickerDialog } from "@/components/ListPickerDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ScoringBreakdown {
   roleMatch?: number;
@@ -53,6 +63,8 @@ export default function Discover() {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [showIntent, setShowIntent] = useState(false);
   const [listPickerOpen, setListPickerOpen] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState<(() => void) | null>(null);
 
   const searchMutation = trpc.discover.search.useMutation({
     onSuccess: (data) => {
@@ -144,6 +156,16 @@ export default function Discover() {
     () => Array.from(selectedIndices).map((i) => results[i]).filter(Boolean),
     [selectedIndices, results]
   );
+
+  /** Guardrail: confirm before bulk operations on >50 items (#8) */
+  const guardedBulkAction = useCallback((action: () => void) => {
+    if (selectedPeople.length > 50) {
+      setPendingBulkAction(() => action);
+      setBulkConfirmOpen(true);
+    } else {
+      action();
+    }
+  }, [selectedPeople.length]);
 
   // ─── Bulk Save + Return IDs ──────────────────────────────────
   const handleBulkSave = () => {
@@ -503,7 +525,7 @@ export default function Discover() {
               <Button
                 variant="default"
                 size="sm"
-                onClick={handleBulkSave}
+                onClick={() => guardedBulkAction(handleBulkSave)}
                 disabled={isBulkBusy}
                 className="gap-1.5"
               >
@@ -517,7 +539,7 @@ export default function Discover() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleBulkSaveAndAddToList}
+                onClick={() => guardedBulkAction(handleBulkSaveAndAddToList)}
                 disabled={isBulkBusy}
                 className="gap-1.5"
               >
@@ -531,7 +553,7 @@ export default function Discover() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleBulkSaveAndDraft}
+                onClick={() => guardedBulkAction(handleBulkSaveAndDraft)}
                 disabled={isBulkBusy}
                 className="gap-1.5"
               >
@@ -545,7 +567,7 @@ export default function Discover() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleBulkSaveAndCreateTasks}
+                onClick={() => guardedBulkAction(handleBulkSaveAndCreateTasks)}
                 disabled={isBulkBusy}
                 className="gap-1.5"
               >
@@ -744,6 +766,27 @@ export default function Discover() {
           </div>
         </div>
       )}
+
+      {/* Bulk Confirmation Dialog (#8) */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Bulk Operation</AlertDialogTitle>
+            <AlertDialogDescription>
+              You are about to perform a bulk action on <strong>{selectedPeople.length}</strong> people.
+              This may take a moment. Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingBulkAction(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (pendingBulkAction) pendingBulkAction();
+              setPendingBulkAction(null);
+              setBulkConfirmOpen(false);
+            }}>Proceed with {selectedPeople.length} people</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* List Picker Dialog for bulk "Add to List" */}
       <ListPickerDialog

@@ -8,11 +8,13 @@ import * as repo from "../repositories";
 import * as voiceService from "../services/voice.service";
 import * as unlinkedNotesService from "../services/unlinkedNotes.service";
 import { trackEvent } from "../services/analytics.service";
+import { enforceRateLimit, RATE_LIMITS } from "../utils/rateLimit";
 
 export const voiceRouter = router({
   uploadAudio: protectedProcedure
     .input(z.object({ audioBase64: z.string(), mimeType: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      enforceRateLimit(ctx.user.id, "voiceUpload", RATE_LIMITS.voiceUpload);
       const result = await voiceService.uploadAudio(ctx.user.id, input.audioBase64, input.mimeType);
       trackEvent(ctx.user.id, "voice_uploaded", { source: "voice" }).catch(() => {});
       return result;

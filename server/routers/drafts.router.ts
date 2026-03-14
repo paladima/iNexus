@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
 import * as draftsService from "../services/drafts.service";
+import { enforceRateLimit, RATE_LIMITS } from "../utils/rateLimit";
 
 export const draftsRouter = router({
   list: protectedProcedure
@@ -27,6 +28,7 @@ export const draftsRouter = router({
       channel: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      enforceRateLimit(ctx.user.id, "draftGeneration", RATE_LIMITS.draftGeneration);
       try {
         return await draftsService.generateOutreachDraft(
           ctx.user.id,

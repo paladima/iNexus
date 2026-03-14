@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { enqueueJob, pollJobStatus, cancelJob } from "../services/job.service";
+import * as jobRepo from "../repositories/jobs.repo";
 
 export const jobsRouter = router({
   /** Poll job status with full metadata (progress, retries, entity info) */
@@ -27,6 +28,36 @@ export const jobsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const cancelled = await cancelJob(input.jobId, ctx.user.id);
       return { cancelled };
+    }),
+
+  /** Retry a failed job (#11) */
+  retry: protectedProcedure
+    .input(z.object({ jobId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const job = await jobRepo.getJobById(input.jobId);
+      if (!job) throw new Error("Job not found");
+      if (job.userId !== ctx.user.id) throw new Error("Not authorized");
+      if (job.status !== "failed") throw new Error("Only failed jobs can be retried");
+      const newJobId = await enqueueJob(ctx.user.id, job.jobType, job.payload ?? {}, {
+        entityType: job.entityType ?? undefined,
+        entityId: job.entityId ?? undefined,
+      });
+      return { jobId: newJobId, status: "queued" };
+    }),
+
+  /** List jobs for current user (#10) */
+  list: protectedProcedure
+    .input(z.object({
+      status: z.string().optional(),
+      jobType: z.string().optional(),
+      limit: z.number().optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      return jobRepo.getJobsByUser(ctx.user.id, {
+        status: input?.status,
+        jobType: input?.jobType,
+        limit: input?.limit ?? 50,
+      });
     }),
 
   /** Trigger opportunity scan — deduped per user (#7) */

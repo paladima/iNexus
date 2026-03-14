@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as discoverService from "../services/discover.service";
 import { trackEvent } from "../services/analytics.service";
+import { enforceRateLimit, RATE_LIMITS } from "../utils/rateLimit";
 
 const personInputSchema = z.object({
   fullName: z.string(),
@@ -25,6 +26,7 @@ export const discoverRouter = router({
       filters: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      enforceRateLimit(ctx.user.id, "discover", RATE_LIMITS.discover);
       const startMs = Date.now();
       const result = await discoverService.executeSearch(ctx.user.id, input.query, input.filters as Record<string, unknown>);
       trackEvent(ctx.user.id, "search_submitted", {

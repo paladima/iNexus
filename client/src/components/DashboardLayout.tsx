@@ -36,6 +36,7 @@ import {
   LogOut,
   PanelLeft,
   Sparkles,
+  Cog,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -52,6 +53,7 @@ const menuItems = [
   { icon: FileText, label: "Drafts", path: "/drafts" },
   { icon: Activity, label: "Activity", path: "/activity" },
   { icon: Mic, label: "Voice", path: "/voice" },
+  { icon: Cog, label: "Jobs", path: "/jobs" },
 ];
 
 const bottomItems = [

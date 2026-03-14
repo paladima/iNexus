@@ -527,3 +527,30 @@
 ### Documentation
 - [x] Updated README with v17 stabilization sprint
 - [x] 258 tests passing across 13 test files (v17stabilization: 14 tests for analytics, perfLogger, smoke test doc), 0 TS errors
+
+## v18 — Stabilization Sprint II (20 items)
+
+### Already Done (12/20)
+- [x] #1 E2E workflow test — docs/SMOKE_TEST.md with 5 chains (v17)
+- [x] #4 Ranking scoring — 6-axis reranking in discover.service (v6)
+- [x] #5 Empty states — all 7 pages with CTA buttons (v17)
+- [x] #6 Loading states — all pages with isLoading/Skeleton (v6+)
+- [x] #7 Optimistic UI — People, Tasks, Drafts with onMutate (v6+)
+- [x] #12 Latency metrics — perfLogger in discover, drafts, voice, jobs (v17)
+- [x] #13 Analytics events — 14 event types, action dispatcher, routers (v17)
+- [x] #14 Onboarding — onboardingRouter, Settings goals, activity logging (v7)
+- [x] #16 Error handling — TRPCError with code/message on all routers (v6+)
+- [x] #18 Security — protectedProcedure + ctx.user.id on all routers (v6+)
+- [x] #19 Structured logging — prefixed logs [JobService], [Analytics], [Perf] (v17)
+
+### Implemented (8/20)
+- [x] #2 Voice stress tests: 6 tests covering all voice.service exports (parseVoiceIntent, uploadAudio, transcribeAudioFile, editVoiceCapture, confirmVoiceActions, resolvePersonCandidates)
+- [x] #3 docs/DISCOVER_QUALITY_AUDIT.md with 50+ test queries across 5 categories
+- [x] #8 Bulk guardrails: AlertDialog confirmation for >50 selections, guardedBulkAction wrapper on all 4 bulk buttons in Discover.tsx
+- [x] #9 Dedupe UI: bulkSave returns skipped/matched counts, toast shows "Saved X people (Y skipped as duplicates)"
+- [x] #10 Jobs page: /jobs route, sidebar nav, status summary cards, filter by status, auto-refresh 5s, retry/cancel buttons
+- [x] #11 jobs.retry endpoint: re-enqueues failed jobs with same params, jobs.list endpoint for monitoring
+- [x] #15 server/scripts/seed-demo.mjs with demo people, lists, tasks, opportunities
+- [x] #17 Rate limits: checkRateLimit/enforceRateLimit in utils/rateLimit.ts, applied to discover (10/min), voice (5/min), drafts (20/min)
+- [x] #20 docs/ALPHA_CHECKLIST.md with Infrastructure, Security, Performance, UX, Analytics sections
+- [x] 279 tests passing across 14 test files, 0 TS errors

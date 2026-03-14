@@ -23,6 +23,7 @@ const ActivityPage = lazy(() => import("./pages/Activity"));
 const Voice = lazy(() => import("./pages/Voice"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const UnlinkedNotes = lazy(() => import("./pages/UnlinkedNotes"));
+const Jobs = lazy(() => import("./pages/Jobs"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function PageLoader() {
@@ -52,6 +53,7 @@ function Router() {
           <Route path="/activity" component={ActivityPage} />
           <Route path="/voice" component={Voice} />
           <Route path="/voice/unlinked" component={UnlinkedNotes} />
+          <Route path="/jobs" component={Jobs} />
           <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>
