@@ -60,10 +60,10 @@ export default function Opportunities() {
     onError: (err) => toast.error(err.message),
   });
 
-  const scanMutation = trpc.workers.scanOpportunities.useMutation({
+  const scanMutation = trpc.jobs.triggerOpportunityScan.useMutation({
     onSuccess: () => {
       utils.opportunities.list.invalidate();
-      toast.success("Opportunity scan complete");
+      toast.success("Opportunity scan started");
     },
     onError: (err) => toast.error(err.message),
   });

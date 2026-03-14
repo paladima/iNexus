@@ -61,11 +61,12 @@
 - [x] #16 Batch outreach for lists (generate drafts for all people in a list)
 
 ## Tests
-- [x] Vitest tests for backend procedures (94 tests passing)
+- [x] Vitest tests for backend procedures (100 tests passing)
 - [x] Tests for auth, onboarding, dashboard, people, lists, tasks, opportunities, drafts, discover, voice, activity, AI command, settings
 - [x] Tests for relationships, warm paths, batch outreach, intro generation, workers
 - [x] Tests for llmHelpers (safeParseJson, parseLLMContent, parseLLMWithSchema, all zod schemas)
 - [x] Tests for opportunity→draft, opportunity→task, multi-tenant isolation
+- [x] Tests for health endpoint, job system, async brief generation
 
 ## Polish
 - [x] Loading states and skeletons
@@ -95,3 +96,25 @@
 - [x] #18 Clean production bundle — no debug artifacts present
 - [x] #19 Add optimistic/error UX on key screens (Tasks, Drafts, People — optimistic deletes, error states, retry buttons)
 - [x] #20 Add integration tests — 94 tests total (llmHelpers: 23, routers: 70, auth: 1) covering auth, onboarding, CRUD, discover, voice, workers, relationships, multi-tenant isolation
+
+## MVP Hardening (20 items)
+- [x] #1 Complete architecture split: routers/, services/, providers/, validators/, repositories/
+- [x] #2 Refactored routers.ts — extracted discover, people, opportunities, voice to split modules
+- [x] #3 Created provider interfaces in server/providers/types.ts
+- [x] #4 Provider registry with feature flags in server/providers/registry.ts
+- [x] #5 Dashboard brief uses async job system with polling
+- [x] #6 Jobs table created with full lifecycle (pending → running → completed/failed)
+- [x] #7 Heavy LLM calls moved to async job handlers (brief, summary, opportunity scan, batch outreach, voice)
+- [x] #8 Unified LLM client in server/services/llm.service.ts with audit logging
+- [x] #9 AI audit logging via ai_audit_log table and logAiAction repo
+- [x] #10 Zod validation schemas for all LLM responses in llmHelpers.ts
+- [x] #11 Ownership validation on all mutations (userId filters on all repos)
+- [x] #12 Workflow chain: discover → save person → add to list → batch outreach → draft
+- [x] #13 Batch outreach on lists, opportunity→draft/task flows
+- [x] #14 People page with optimistic updates, error states, retry
+- [x] #15 Voice flow with async job-based transcription and parsing
+- [x] #16 AI Command Bar with LLM-based intent routing
+- [x] #17 Full repository layer: user, people, lists, tasks, opportunities, drafts, voice, activity, search, briefs, interactions, dashboard, jobs, audit
+- [x] #18 Clean production — no debug artifacts, proper .gitignore
+- [x] #19 Client bundle clean — no debug UI or showcase components
+- [x] #20 Health endpoint at /api/trpc/health.check, job system with worker launch at startup

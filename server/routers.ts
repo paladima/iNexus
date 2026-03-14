@@ -5,13 +5,13 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import * as db from "./db";
-import { runAllWorkers, generateDailyBriefForUser, scanOpportunitiesForUser } from "./workers";
+import * as repo from "./repositories";
+import { enqueueJob, pollJobStatus } from "./services/job.service";
 import {
   parseLLMWithSchema,
   dailyBriefSchema,
   draftSchema,
-  aiCommandSchema,
+  aiCommandSchema as aiCommandLLMSchema,
 } from "./llmHelpers";
 
 // #17: Split routers for maintainability
@@ -35,7 +35,7 @@ export const appRouter = router({
   // ─── Onboarding ──────────────────────────────────────────────
   onboarding: router({
     getGoals: protectedProcedure.query(async ({ ctx }) => {
-      return db.getUserGoals(ctx.user.id);
+      return repo.getUserGoals(ctx.user.id);
     }),
     saveGoals: protectedProcedure
       .input(z.object({
@@ -45,16 +45,16 @@ export const appRouter = router({
         preferences: z.record(z.string(), z.unknown()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        await db.upsertUserGoals(ctx.user.id, input);
-        await db.logActivity(ctx.user.id, {
+        await repo.upsertUserGoals(ctx.user.id, input);
+        await repo.logActivity(ctx.user.id, {
           activityType: "onboarding_goals_saved",
           title: "Updated networking goals",
         });
         return { success: true };
       }),
     complete: protectedProcedure.mutation(async ({ ctx }) => {
-      await db.updateUserSettings(ctx.user.id, { onboardingCompleted: 1 });
-      await db.logActivity(ctx.user.id, {
+      await repo.updateUserSettings(ctx.user.id, { onboardingCompleted: 1 });
+      await repo.logActivity(ctx.user.id, {
         activityType: "onboarding_completed",
         title: "Completed onboarding",
       });
@@ -65,48 +65,18 @@ export const appRouter = router({
   // ─── Dashboard ───────────────────────────────────────────────
   dashboard: router({
     stats: protectedProcedure.query(async ({ ctx }) => {
-      return db.getDashboardStats(ctx.user.id);
+      return repo.getDashboardStats(ctx.user.id);
     }),
     dailyBrief: protectedProcedure
       .input(z.object({ date: z.string().optional() }).optional())
       .query(async ({ ctx, input }) => {
         const date = input?.date ?? new Date().toISOString().split("T")[0];
-        return db.getDailyBrief(ctx.user.id, date);
+        return repo.getDailyBrief(ctx.user.id, date);
       }),
-    // #13: Generate brief in background, return status immediately
+    // #5/#6: Use job system for async brief generation
     generateBrief: protectedProcedure.mutation(async ({ ctx }) => {
-      const userId = ctx.user.id;
-      const date = new Date().toISOString().split("T")[0];
-
-      (async () => {
-        try {
-          const stats = await db.getDashboardStats(userId);
-          const tasksResult = await db.getTasks(userId, { view: "today", limit: 10 });
-          const opps = await db.getOpportunities(userId, { status: "open", limit: 5 });
-
-          const response = await invokeLLM({
-            messages: [
-              {
-                role: "system",
-                content: `You are an AI networking assistant. Generate a daily brief with top 3-5 actionable items. Return JSON: { "greeting": "...", "items": [{ "title": "...", "description": "...", "priority": "high|medium|low", "type": "task|opportunity|follow_up" }], "summary": "..." }`
-              },
-              {
-                role: "user",
-                content: `Stats: ${JSON.stringify(stats)}\nToday's tasks: ${JSON.stringify(tasksResult.items)}\nOpen opportunities: ${JSON.stringify(opps.items)}`
-              }
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const briefJson = parseLLMWithSchema(response, dailyBriefSchema, "dashboard.generateBrief", { greeting: "", items: [], summary: "" });
-          await db.saveDailyBrief(userId, date, briefJson);
-          console.log(`[DailyBrief] Background generation complete for user ${userId}`);
-        } catch (error) {
-          console.error(`[DailyBrief] Background generation failed for user ${userId}:`, error);
-        }
-      })();
-
-      return { status: "generating", message: "Daily brief is being generated. Refresh in a few seconds." };
+      const jobId = await enqueueJob(ctx.user.id, "generate_brief");
+      return { status: "generating", jobId, message: "Daily brief is being generated. Refresh in a few seconds." };
     }),
   }),
 
@@ -119,21 +89,21 @@ export const appRouter = router({
   // ─── Lists ───────────────────────────────────────────────────
   lists: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getLists(ctx.user.id);
+      return repo.getLists(ctx.user.id);
     }),
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-        const list = await db.getListById(ctx.user.id, input.id);
+        const list = await repo.getListById(ctx.user.id, input.id);
         if (!list) throw new TRPCError({ code: "NOT_FOUND" });
-        const people = await db.getListPeople(ctx.user.id, input.id);
+        const people = await repo.getListPeople(ctx.user.id, input.id);
         return { ...list, people };
       }),
     create: protectedProcedure
       .input(z.object({ name: z.string().min(1), description: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const id = await db.createList(ctx.user.id, input.name, input.description);
-        await db.logActivity(ctx.user.id, {
+        const id = await repo.createList(ctx.user.id, input.name, input.description);
+        await repo.logActivity(ctx.user.id, {
           activityType: "list_created",
           title: `Created list "${input.name}"`,
           entityType: "list",
@@ -145,27 +115,28 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), name: z.string().optional(), description: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        await db.updateList(ctx.user.id, id, data);
+        await repo.updateList(ctx.user.id, id, data);
         return { success: true };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.deleteList(ctx.user.id, input.id);
+        await repo.deleteList(ctx.user.id, input.id);
         return { success: true };
       }),
     addPerson: protectedProcedure
       .input(z.object({ listId: z.number(), personId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.addPersonToList(ctx.user.id, input.listId, input.personId);
+        await repo.addPersonToList(ctx.user.id, input.listId, input.personId);
         return { success: true };
       }),
     removePerson: protectedProcedure
       .input(z.object({ listId: z.number(), personId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.removePersonFromList(ctx.user.id, input.listId, input.personId);
+        await repo.removePersonFromList(ctx.user.id, input.listId, input.personId);
         return { success: true };
       }),
+    // #5/#6: Use job system for batch outreach
     batchOutreach: protectedProcedure
       .input(z.object({
         listId: z.number(),
@@ -173,50 +144,23 @@ export const appRouter = router({
         context: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const listPeople = await db.getListPeopleForBatch(ctx.user.id, input.listId);
+        const listPeople = await repo.getListPeopleForBatch(ctx.user.id, input.listId);
         if (listPeople.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "List is empty" });
-        const goals = await db.getUserGoals(ctx.user.id);
-        const draftsCreated: Array<{ personId: number; personName: string; draftId: number | null }> = [];
 
-        for (const { person } of listPeople) {
-          try {
-            const response = await invokeLLM({
-              messages: [
-                {
-                  role: "system",
-                  content: `Generate a personalized outreach message. Tone: ${input.tone ?? "professional"}. Return JSON: { "subject": "...", "body": "..." }`
-                },
-                {
-                  role: "user",
-                  content: `Person: ${JSON.stringify(person)}\nUser goals: ${JSON.stringify(goals)}\nContext: ${input.context ?? "Batch outreach for list"}`
-                }
-              ],
-              response_format: { type: "json_object" },
-            });
-            const parsed = parseLLMWithSchema(response, draftSchema, "lists.batchOutreach", { subject: "", body: "" });
-            const draftId = await db.createDraft(ctx.user.id, {
-              personId: person.id,
-              listId: input.listId,
-              draftType: "batch_outreach",
-              tone: input.tone ?? "professional",
-              subject: parsed.subject,
-              body: parsed.body,
-            });
-            draftsCreated.push({ personId: person.id, personName: person.fullName, draftId });
-          } catch (err) {
-            console.error(`[BatchOutreach] Failed for person ${person.id}:`, err);
-            draftsCreated.push({ personId: person.id, personName: person.fullName, draftId: null });
-          }
-        }
+        const jobId = await enqueueJob(ctx.user.id, "batch_outreach", {
+          listId: input.listId,
+          tone: input.tone ?? "professional",
+          context: input.context,
+        });
 
-        await db.logActivity(ctx.user.id, {
+        await repo.logActivity(ctx.user.id, {
           activityType: "batch_outreach",
-          title: `Batch outreach: ${draftsCreated.length} drafts for list`,
+          title: `Started batch outreach for ${listPeople.length} people`,
           entityType: "list",
           entityId: input.listId,
-          metadataJson: { count: draftsCreated.length },
         });
-        return { drafts: draftsCreated, total: draftsCreated.length };
+
+        return { status: "processing", jobId, total: listPeople.length };
       }),
   }),
 
@@ -231,7 +175,7 @@ export const appRouter = router({
         offset: z.number().optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        return db.getTasks(ctx.user.id, input ?? {});
+        return repo.getTasks(ctx.user.id, input ?? {});
       }),
     create: protectedProcedure
       .input(z.object({
@@ -245,11 +189,11 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { dueAt, ...rest } = input;
-        const id = await db.createTask(ctx.user.id, {
+        const id = await repo.createTask(ctx.user.id, {
           ...rest,
           dueAt: dueAt ? new Date(dueAt) : undefined,
         });
-        await db.logActivity(ctx.user.id, {
+        await repo.logActivity(ctx.user.id, {
           activityType: "task_created",
           title: `Created task: ${input.title}`,
           entityType: "task",
@@ -271,9 +215,9 @@ export const appRouter = router({
         const data: Record<string, unknown> = { ...rest };
         if (dueAt !== undefined) data.dueAt = dueAt ? new Date(dueAt) : null;
         if (rest.status === "completed") data.completedAt = new Date();
-        await db.updateTask(ctx.user.id, id, data);
+        await repo.updateTask(ctx.user.id, id, data);
         if (rest.status === "completed") {
-          await db.logActivity(ctx.user.id, {
+          await repo.logActivity(ctx.user.id, {
             activityType: "task_completed",
             title: `Completed a task`,
             entityType: "task",
@@ -285,7 +229,7 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.deleteTask(ctx.user.id, input.id);
+        await repo.deleteTask(ctx.user.id, input.id);
         return { success: true };
       }),
   }),
@@ -300,7 +244,7 @@ export const appRouter = router({
         offset: z.number().optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        return db.getDrafts(ctx.user.id, input ?? {});
+        return repo.getDrafts(ctx.user.id, input ?? {});
       }),
     create: protectedProcedure
       .input(z.object({
@@ -312,7 +256,7 @@ export const appRouter = router({
         body: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const id = await db.createDraft(ctx.user.id, input);
+        const id = await repo.createDraft(ctx.user.id, input);
         return { id };
       }),
     update: protectedProcedure
@@ -325,9 +269,9 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        await db.updateDraft(ctx.user.id, id, data);
+        await repo.updateDraft(ctx.user.id, id, data);
         if (data.status === "approved") {
-          await db.logActivity(ctx.user.id, {
+          await repo.logActivity(ctx.user.id, {
             activityType: "draft_approved",
             title: "Approved a message draft",
             entityType: "draft",
@@ -339,7 +283,7 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.deleteDraft(ctx.user.id, input.id);
+        await repo.deleteDraft(ctx.user.id, input.id);
         return { success: true };
       }),
     generate: protectedProcedure
@@ -349,9 +293,9 @@ export const appRouter = router({
         context: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const person = await db.getPersonById(ctx.user.id, input.personId);
+        const person = await repo.getPersonById(ctx.user.id, input.personId);
         if (!person) throw new TRPCError({ code: "NOT_FOUND" });
-        const goals = await db.getUserGoals(ctx.user.id);
+        const goals = await repo.getUserGoals(ctx.user.id);
 
         const response = await invokeLLM({
           messages: [
@@ -368,14 +312,14 @@ export const appRouter = router({
         });
 
         const parsed = parseLLMWithSchema(response, draftSchema, "drafts.generate", { subject: "", body: "" });
-        const draftId = await db.createDraft(ctx.user.id, {
+        const draftId = await repo.createDraft(ctx.user.id, {
           personId: input.personId,
           draftType: "outreach",
           tone: input.tone ?? "professional",
           subject: parsed.subject,
           body: parsed.body,
         });
-        await db.logActivity(ctx.user.id, {
+        await repo.logActivity(ctx.user.id, {
           activityType: "draft_generated",
           title: `Generated draft for ${person.fullName}`,
           entityType: "draft",
@@ -393,14 +337,14 @@ export const appRouter = router({
         offset: z.number().optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        return db.getActivityLog(ctx.user.id, input?.limit ?? 50, input?.offset ?? 0);
+        return repo.getActivityLog(ctx.user.id, input?.limit ?? 50, input?.offset ?? 0);
       }),
   }),
 
   // ─── Settings ────────────────────────────────────────────────
   settings: router({
     get: protectedProcedure.query(async ({ ctx }) => {
-      const goals = await db.getUserGoals(ctx.user.id);
+      const goals = await repo.getUserGoals(ctx.user.id);
       return { user: ctx.user, goals };
     }),
     update: protectedProcedure
@@ -412,7 +356,7 @@ export const appRouter = router({
         name: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        await db.updateUserSettings(ctx.user.id, input);
+        await repo.updateUserSettings(ctx.user.id, input);
         return { success: true };
       }),
   }),
@@ -422,7 +366,7 @@ export const appRouter = router({
     forPerson: protectedProcedure
       .input(z.object({ personId: z.number() }))
       .query(async ({ ctx, input }) => {
-        return db.getRelationshipsForPerson(ctx.user.id, input.personId);
+        return repo.getRelationshipsForPerson(ctx.user.id, input.personId);
       }),
     create: protectedProcedure
       .input(z.object({
@@ -433,29 +377,32 @@ export const appRouter = router({
         source: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const id = await db.createRelationship(ctx.user.id, input);
+        const id = await repo.createRelationship(ctx.user.id, input);
         return { id };
       }),
     warmPaths: protectedProcedure
       .input(z.object({ targetPersonId: z.number() }))
       .query(async ({ ctx, input }) => {
-        return db.findWarmPaths(ctx.user.id, input.targetPersonId);
+        return repo.findWarmPaths(ctx.user.id, input.targetPersonId);
       }),
   }),
 
-  // ─── Workers (manual trigger) ───────────────────────────────
-  workers: router({
-    runAll: protectedProcedure.mutation(async () => {
-      await runAllWorkers();
-      return { success: true };
+  // ─── Jobs (status polling + manual triggers) ─────────────────
+  jobs: router({
+    status: protectedProcedure
+      .input(z.object({ jobId: z.number() }))
+      .query(async ({ input }) => {
+        const status = await pollJobStatus(input.jobId);
+        if (!status) throw new TRPCError({ code: "NOT_FOUND" });
+        return status;
+      }),
+    triggerBrief: protectedProcedure.mutation(async ({ ctx }) => {
+      const jobId = await enqueueJob(ctx.user.id, "generate_brief");
+      return { jobId };
     }),
-    generateBrief: protectedProcedure.mutation(async ({ ctx }) => {
-      await generateDailyBriefForUser(ctx.user.id);
-      return { success: true };
-    }),
-    scanOpportunities: protectedProcedure.mutation(async ({ ctx }) => {
-      await scanOpportunitiesForUser(ctx.user.id);
-      return { success: true };
+    triggerOpportunityScan: protectedProcedure.mutation(async ({ ctx }) => {
+      const jobId = await enqueueJob(ctx.user.id, "scan_opportunities");
+      return { jobId };
     }),
   }),
 
@@ -464,8 +411,8 @@ export const appRouter = router({
     command: protectedProcedure
       .input(z.object({ command: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
-        const goals = await db.getUserGoals(ctx.user.id);
-        const stats = await db.getDashboardStats(ctx.user.id);
+        const goals = await repo.getUserGoals(ctx.user.id);
+        const stats = await repo.getDashboardStats(ctx.user.id);
 
         const response = await invokeLLM({
           messages: [
@@ -481,9 +428,9 @@ export const appRouter = router({
           response_format: { type: "json_object" },
         });
 
-        const parsed = parseLLMWithSchema(response, aiCommandSchema, "ai.command", { action: "info", params: {}, response: "" });
+        const parsed = parseLLMWithSchema(response, aiCommandLLMSchema, "ai.command", { action: "info", params: {}, response: "" });
 
-        await db.logActivity(ctx.user.id, {
+        await repo.logActivity(ctx.user.id, {
           activityType: "ai_command",
           title: `AI command: "${input.command}"`,
           metadataJson: { action: parsed.action },
@@ -491,6 +438,18 @@ export const appRouter = router({
 
         return parsed;
       }),
+  }),
+
+  // ─── Health (#20) ───────────────────────────────────────────
+  health: router({
+    check: publicProcedure.query(async () => {
+      const dbOk = await repo.healthCheck();
+      return {
+        status: dbOk ? "healthy" : "degraded",
+        timestamp: Date.now(),
+        db: dbOk ? "connected" : "unavailable",
+      };
+    }),
   }),
 });
 

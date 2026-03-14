@@ -7,7 +7,7 @@ import { invokeLLM } from "../_core/llm";
 import { transcribeAudio } from "../_core/voiceTranscription";
 import { protectedProcedure, router } from "../_core/trpc";
 import { storagePut } from "../storage";
-import * as db from "../db";
+import * as repo from "../repositories";
 import { parseLLMWithSchema, voiceIntentSchema } from "../llmHelpers";
 
 export const voiceRouter = router({
@@ -39,13 +39,13 @@ export const voiceRouter = router({
 
       const parsed = parseLLMWithSchema(response, voiceIntentSchema, "voice.parseIntent", { people: [], tasks: [], notes: [], reminders: [] });
 
-      const captureId = await db.createVoiceCapture(ctx.user.id, {
+      const captureId = await repo.createVoiceCapture(ctx.user.id, {
         transcript: input.transcript,
         parsedJson: parsed,
         status: "parsed",
       });
 
-      await db.logActivity(ctx.user.id, {
+      await repo.logActivity(ctx.user.id, {
         activityType: "voice_capture",
         title: "Voice note captured",
         entityType: "voice_capture",
@@ -64,6 +64,6 @@ export const voiceRouter = router({
       return { url };
     }),
   history: protectedProcedure.query(async ({ ctx }) => {
-    return db.getVoiceCaptures(ctx.user.id);
+    return repo.getVoiceCaptures(ctx.user.id);
   }),
 });

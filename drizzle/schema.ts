@@ -293,3 +293,41 @@ export const relationships = mysqlTable("relationships", {
 ]);
 
 export type Relationship = typeof relationships.$inferSelect;
+
+// ─── Jobs ───────────────────────────────────────────────────────
+export const jobs = mysqlTable("jobs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  jobType: varchar("jobType", { length: 64 }).notNull(),
+  status: varchar("status", { length: 16 }).default("pending").notNull(),
+  payload: json("payload").$type<Record<string, unknown>>().default({}),
+  result: json("result").$type<Record<string, unknown>>(),
+  error: text("error"),
+  startedAt: timestamp("startedAt"),
+  finishedAt: timestamp("finishedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_jobs_userId_type").on(table.userId, table.jobType),
+  index("idx_jobs_status").on(table.status),
+]);
+
+export type Job = typeof jobs.$inferSelect;
+
+// ─── AI Audit Log ───────────────────────────────────────────────
+export const aiAuditLog = mysqlTable("ai_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  promptModule: varchar("promptModule", { length: 64 }).notNull(),
+  entityType: varchar("entityType", { length: 32 }),
+  entityId: int("entityId"),
+  success: int("success").default(1).notNull(),
+  usedFallback: int("usedFallback").default(0).notNull(),
+  errorMessage: text("errorMessage"),
+  durationMs: int("durationMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_audit_userId").on(table.userId),
+  index("idx_ai_audit_module").on(table.promptModule),
+]);
+
+export type AiAuditEntry = typeof aiAuditLog.$inferSelect;

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../db";
+import * as repo from "../repositories";
 import { parseLLMWithSchema, draftSchema } from "../llmHelpers";
 
 export const opportunitiesRouter = router({
@@ -17,7 +17,7 @@ export const opportunitiesRouter = router({
       offset: z.number().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return db.getOpportunities(ctx.user.id, input ?? {});
+      return repo.getOpportunities(ctx.user.id, input ?? {});
     }),
   create: protectedProcedure
     .input(z.object({
@@ -30,8 +30,8 @@ export const opportunitiesRouter = router({
       score: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const id = await db.createOpportunity(ctx.user.id, input);
-      await db.logActivity(ctx.user.id, {
+      const id = await repo.createOpportunity(ctx.user.id, input);
+      await repo.logActivity(ctx.user.id, {
         activityType: "opportunity_created",
         title: `New opportunity: ${input.title}`,
         entityType: "opportunity",
@@ -47,7 +47,7 @@ export const opportunitiesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updateOpportunity(ctx.user.id, id, data);
+      await repo.updateOpportunity(ctx.user.id, id, data);
       return { success: true };
     }),
   generateDraft: protectedProcedure
@@ -56,11 +56,11 @@ export const opportunitiesRouter = router({
       tone: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const opp = await db.getOpportunityById(ctx.user.id, input.opportunityId);
+      const opp = await repo.getOpportunityById(ctx.user.id, input.opportunityId);
       if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "Opportunity not found" });
       let person = null;
-      if (opp.personId) person = await db.getPersonById(ctx.user.id, opp.personId);
-      const goals = await db.getUserGoals(ctx.user.id);
+      if (opp.personId) person = await repo.getPersonById(ctx.user.id, opp.personId);
+      const goals = await repo.getUserGoals(ctx.user.id);
 
       const response = await invokeLLM({
         messages: [
@@ -77,7 +77,7 @@ export const opportunitiesRouter = router({
       });
 
       const parsed = parseLLMWithSchema(response, draftSchema, "opportunities.generateDraft", { subject: "", body: "" });
-      const draftId = await db.createDraft(ctx.user.id, {
+      const draftId = await repo.createDraft(ctx.user.id, {
         personId: opp.personId ?? undefined,
         draftType: "opportunity_outreach",
         tone: input.tone ?? "professional",
@@ -85,7 +85,7 @@ export const opportunitiesRouter = router({
         body: parsed.body,
         metadataJson: { opportunityId: input.opportunityId },
       });
-      await db.logActivity(ctx.user.id, {
+      await repo.logActivity(ctx.user.id, {
         activityType: "draft_from_opportunity",
         title: `Generated draft from opportunity: ${opp.title}`,
         entityType: "draft",
@@ -101,9 +101,9 @@ export const opportunitiesRouter = router({
       priority: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const opp = await db.getOpportunityById(ctx.user.id, input.opportunityId);
+      const opp = await repo.getOpportunityById(ctx.user.id, input.opportunityId);
       if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "Opportunity not found" });
-      const taskId = await db.createTask(ctx.user.id, {
+      const taskId = await repo.createTask(ctx.user.id, {
         title: input.title ?? opp.recommendedAction ?? `Follow up on: ${opp.title}`,
         description: opp.signalSummary,
         personId: opp.personId ?? undefined,
@@ -112,7 +112,7 @@ export const opportunitiesRouter = router({
         priority: input.priority ?? "medium",
         source: "opportunity",
       });
-      await db.logActivity(ctx.user.id, {
+      await repo.logActivity(ctx.user.id, {
         activityType: "task_from_opportunity",
         title: `Created task from opportunity: ${opp.title}`,
         entityType: "task",
@@ -126,14 +126,14 @@ export const opportunitiesRouter = router({
       tone: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const opp = await db.getOpportunityById(ctx.user.id, input.opportunityId);
+      const opp = await repo.getOpportunityById(ctx.user.id, input.opportunityId);
       if (!opp) throw new TRPCError({ code: "NOT_FOUND" });
       const meta = opp.metadataJson as Record<string, unknown> | null;
       const personAId = meta?.personAId as number | undefined;
       const personBId = meta?.personBId as number | undefined;
       let personA = null, personB = null;
-      if (personAId) personA = await db.getPersonById(ctx.user.id, personAId);
-      if (personBId) personB = await db.getPersonById(ctx.user.id, personBId);
+      if (personAId) personA = await repo.getPersonById(ctx.user.id, personAId);
+      if (personBId) personB = await repo.getPersonById(ctx.user.id, personBId);
 
       const response = await invokeLLM({
         messages: [
@@ -150,14 +150,14 @@ export const opportunitiesRouter = router({
       });
 
       const parsed = parseLLMWithSchema(response, draftSchema, "opportunities.generateIntro", { subject: "", body: "" });
-      const draftId = await db.createDraft(ctx.user.id, {
+      const draftId = await repo.createDraft(ctx.user.id, {
         draftType: "intro_message",
         tone: input.tone ?? "warm",
         subject: parsed.subject,
         body: parsed.body,
         metadataJson: { opportunityId: input.opportunityId, personAId, personBId },
       });
-      await db.logActivity(ctx.user.id, {
+      await repo.logActivity(ctx.user.id, {
         activityType: "intro_draft_generated",
         title: `Generated intro between ${personA?.fullName ?? "?"} and ${personB?.fullName ?? "?"}`,
         entityType: "draft",

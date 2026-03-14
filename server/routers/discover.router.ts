@@ -5,7 +5,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../db";
+import * as repo from "../repositories";
 import {
   parseLLMContent,
   parseLLMWithSchema,
@@ -19,7 +19,7 @@ export const discoverRouter = router({
       filters: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const goals = await db.getUserGoals(ctx.user.id);
+      const goals = await repo.getUserGoals(ctx.user.id);
 
       // Step 1: Intent Decomposition
       const intentResponse = await invokeLLM({
@@ -40,7 +40,7 @@ export const discoverRouter = router({
       const queryVariants = intent.queryVariants.length > 0 ? intent.queryVariants : [input.query];
       const negatives = intent.negatives;
 
-      const queryId = await db.createSearchQuery(ctx.user.id, input.query, input.filters as Record<string, unknown>, {
+      const queryId = await repo.createSearchQuery(ctx.user.id, input.query, input.filters as Record<string, unknown>, {
         parsedIntentsJson: intent,
         queryVariantsJson: queryVariants,
         negativeTermsJson: negatives,
@@ -86,7 +86,7 @@ export const discoverRouter = router({
       results.sort((a: Record<string, unknown>, b: Record<string, unknown>) => ((b.relevanceScore as number) ?? 0) - ((a.relevanceScore as number) ?? 0));
 
       if (queryId) {
-        await db.saveSearchResults(queryId, results.map((r: Record<string, unknown>, i: number) => ({
+        await repo.saveSearchResults(queryId, results.map((r: Record<string, unknown>, i: number) => ({
           personSnapshotJson: r,
           rank: i + 1,
           scoringJson: (r.scoring ?? {}) as Record<string, unknown>,
@@ -94,7 +94,7 @@ export const discoverRouter = router({
         })));
       }
 
-      await db.logActivity(ctx.user.id, {
+      await repo.logActivity(ctx.user.id, {
         activityType: "discovery_search",
         title: `Searched: "${input.query}"`,
         metadataJson: { resultCount: results.length, intent },
@@ -114,13 +114,13 @@ export const discoverRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const names = input.fullName.split(" ");
-      const id = await db.createPerson(ctx.user.id, {
+      const id = await repo.createPerson(ctx.user.id, {
         ...input,
         firstName: names[0],
         lastName: names.slice(1).join(" "),
         status: "saved",
       });
-      await db.logActivity(ctx.user.id, {
+      await repo.logActivity(ctx.user.id, {
         activityType: "person_saved_from_discovery",
         title: `Saved ${input.fullName} from discovery`,
         entityType: "person",

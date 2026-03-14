@@ -5,7 +5,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../db";
+import * as repo from "../repositories";
 import { parseLLMWithSchema, personSummarySchema } from "../llmHelpers";
 
 export const peopleRouter = router({
@@ -18,15 +18,15 @@ export const peopleRouter = router({
       offset: z.number().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return db.getPeople(ctx.user.id, input ?? {});
+      return repo.getPeople(ctx.user.id, input ?? {});
     }),
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const person = await db.getPersonById(ctx.user.id, input.id);
+      const person = await repo.getPersonById(ctx.user.id, input.id);
       if (!person) throw new TRPCError({ code: "NOT_FOUND", message: "Person not found" });
-      const notes = await db.getPersonNotes(ctx.user.id, input.id);
-      const interactionsList = await db.getInteractions(ctx.user.id, input.id, 20);
+      const notes = await repo.getPersonNotes(ctx.user.id, input.id);
+      const interactionsList = await repo.getInteractions(ctx.user.id, input.id, 20);
       return { ...person, notes, interactions: interactionsList };
     }),
   create: protectedProcedure
@@ -46,8 +46,8 @@ export const peopleRouter = router({
       tags: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const id = await db.createPerson(ctx.user.id, input);
-      await db.logActivity(ctx.user.id, {
+      const id = await repo.createPerson(ctx.user.id, input);
+      await repo.logActivity(ctx.user.id, {
         activityType: "person_added",
         title: `Added ${input.fullName}`,
         entityType: "person",
@@ -74,14 +74,14 @@ export const peopleRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updatePerson(ctx.user.id, id, data);
+      await repo.updatePerson(ctx.user.id, id, data);
       return { success: true };
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.deletePerson(ctx.user.id, input.id);
-      await db.logActivity(ctx.user.id, {
+      await repo.deletePerson(ctx.user.id, input.id);
+      await repo.logActivity(ctx.user.id, {
         activityType: "person_deleted",
         title: "Removed a contact",
         entityType: "person",
@@ -92,7 +92,7 @@ export const peopleRouter = router({
   addNote: protectedProcedure
     .input(z.object({ personId: z.number(), content: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      await db.addPersonNote(ctx.user.id, input.personId, input.content);
+      await repo.addPersonNote(ctx.user.id, input.personId, input.content);
       return { success: true };
     }),
   addInteraction: protectedProcedure
@@ -103,17 +103,17 @@ export const peopleRouter = router({
       content: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await db.addInteraction(ctx.user.id, { ...input, occurredAt: new Date() });
+      await repo.addInteraction(ctx.user.id, { ...input, occurredAt: new Date() });
       return { success: true };
     }),
   generateSummary: protectedProcedure
     .input(z.object({ personId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const person = await db.getPersonById(ctx.user.id, input.personId);
+      const person = await repo.getPersonById(ctx.user.id, input.personId);
       if (!person) throw new TRPCError({ code: "NOT_FOUND" });
-      const notes = await db.getPersonNotes(ctx.user.id, input.personId);
-      const ints = await db.getInteractions(ctx.user.id, input.personId, 10);
-      const goals = await db.getUserGoals(ctx.user.id);
+      const notes = await repo.getPersonNotes(ctx.user.id, input.personId);
+      const ints = await repo.getInteractions(ctx.user.id, input.personId, 10);
+      const goals = await repo.getUserGoals(ctx.user.id);
 
       const response = await invokeLLM({
         messages: [
@@ -130,7 +130,7 @@ export const peopleRouter = router({
       });
 
       const parsed = parseLLMWithSchema(response, personSummarySchema, "people.generateSummary", { summary: "", keyTopics: [], relevanceScore: 0 });
-      await db.updatePerson(ctx.user.id, input.personId, { aiSummary: parsed.summary });
+      await repo.updatePerson(ctx.user.id, input.personId, { aiSummary: parsed.summary });
       return parsed;
     }),
 });

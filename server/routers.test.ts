@@ -42,8 +42,8 @@ function createUnauthContext(): TrpcContext {
   };
 }
 
-// Mock the database module
-vi.mock("./db", () => ({
+// Mock the repositories module (was ./db, now split into repositories)
+vi.mock("./repositories", () => ({
   getUserGoals: vi.fn().mockResolvedValue({
     id: 1,
     userId: 1,
@@ -122,6 +122,17 @@ vi.mock("./db", () => ({
     signalSummary: "Both interested in AI",
     metadataJson: { personAId: 1, personBId: 2 }
   }),
+  getPeopleNeedingReconnect: vi.fn().mockResolvedValue([]),
+  healthCheck: vi.fn().mockResolvedValue(true),
+  getDb: vi.fn().mockResolvedValue({}),
+  requireDb: vi.fn().mockResolvedValue({}),
+  logAiAction: vi.fn().mockResolvedValue(undefined),
+  createJob: vi.fn().mockResolvedValue(1),
+  getJobById: vi.fn().mockResolvedValue({ id: 1, status: "completed", result: {} }),
+  updateJobStatus: vi.fn().mockResolvedValue(undefined),
+  getJobsByUser: vi.fn().mockResolvedValue([]),
+  cleanupOldJobs: vi.fn().mockResolvedValue(undefined),
+  getAllUsersWithBriefEnabled: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock LLM
@@ -136,6 +147,14 @@ vi.mock("./workers", () => ({
   runAllWorkers: vi.fn().mockResolvedValue(undefined),
   generateDailyBriefForUser: vi.fn().mockResolvedValue(undefined),
   scanOpportunitiesForUser: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock job service
+vi.mock("./services/job.service", () => ({
+  enqueueJob: vi.fn().mockResolvedValue(1),
+  pollJobStatus: vi.fn().mockResolvedValue({ id: 1, status: "completed", result: {} }),
+  registerJobHandler: vi.fn(),
+  startJobProcessor: vi.fn(),
 }));
 
 // Mock voice transcription
@@ -575,15 +594,14 @@ describe("relationships", () => {
 });
 
 describe("lists.batchOutreach", () => {
-  it("generates drafts for all people in a list", async () => {
+  it("enqueues a batch outreach job and returns status", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.lists.batchOutreach({ listId: 1 });
     expect(result).toBeDefined();
+    expect(result.status).toBe("processing");
+    expect(result.jobId).toBe(1);
     expect(result.total).toBe(2);
-    expect(result.drafts.length).toBe(2);
-    expect(result.drafts[0].personName).toBe("John Doe");
-    expect(result.drafts[1].personName).toBe("Jane Smith");
   });
 
   it("batchOutreach requires authentication", async () => {
@@ -611,32 +629,35 @@ describe("opportunities.generateIntro", () => {
   });
 });
 
-describe("workers", () => {
-  it("runAll triggers all background workers", async () => {
+describe("jobs", () => {
+  it("triggerBrief enqueues a brief generation job", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.workers.runAll();
-    expect(result).toEqual({ success: true });
+    const result = await caller.jobs.triggerBrief();
+    expect(result).toBeDefined();
+    expect(result.jobId).toBe(1);
   });
 
-  it("generateBrief triggers daily brief for user", async () => {
+  it("triggerOpportunityScan enqueues an opportunity scan job", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.workers.generateBrief();
-    expect(result).toEqual({ success: true });
+    const result = await caller.jobs.triggerOpportunityScan();
+    expect(result).toBeDefined();
+    expect(result.jobId).toBe(1);
   });
 
-  it("scanOpportunities triggers opportunity scan", async () => {
+  it("status returns job status", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.workers.scanOpportunities();
-    expect(result).toEqual({ success: true });
+    const result = await caller.jobs.status({ jobId: 1 });
+    expect(result).toBeDefined();
+    expect(result.status).toBe("completed");
   });
 
-  it("workers require authentication", async () => {
+  it("jobs require authentication", async () => {
     const ctx = createUnauthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.workers.runAll()).rejects.toThrow();
+    await expect(caller.jobs.triggerBrief()).rejects.toThrow();
   });
 });
 
@@ -792,5 +813,60 @@ describe("multi-tenant isolation", () => {
     await expect(caller.discover.search({ query: "test" })).rejects.toThrow();
     await expect(caller.voice.history()).rejects.toThrow();
     await expect(caller.settings.get()).rejects.toThrow();
+  });
+});
+
+// ─── MVP Hardening: New feature tests ──────────────────────────
+
+describe("health", () => {
+  it("check returns health status", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.health.check();
+    expect(result).toBeDefined();
+    expect(result.status).toBe("healthy");
+    expect(result.timestamp).toBeDefined();
+  });
+
+  it("health check works without authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.health.check();
+    expect(result).toBeDefined();
+    expect(result.status).toBe("healthy");
+  });
+});
+
+describe("jobs system", () => {
+  it("triggerBrief returns a jobId", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.jobs.triggerBrief();
+    expect(result.jobId).toBe(1);
+  });
+
+  it("triggerOpportunityScan returns a jobId", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.jobs.triggerOpportunityScan();
+    expect(result.jobId).toBe(1);
+  });
+
+  it("status returns completed job details", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.jobs.status({ jobId: 1 });
+    expect(result.id).toBe(1);
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("dashboard.generateBrief (async)", () => {
+  it("returns generating status with background job", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.generateBrief();
+    expect(result.status).toBe("generating");
+    expect(result.message).toBeDefined();
   });
 });

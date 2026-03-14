@@ -5,6 +5,8 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { startWorkers } from "../workers";
+import { registerAllHandlers } from "../services/job.handlers";
+import { startJobProcessor } from "../services/job.service";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -62,6 +64,9 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
     // Start background workers
     startWorkers();
+    // Register job handlers and start job processor
+    registerAllHandlers();
+    startJobProcessor();
   });
 }
 

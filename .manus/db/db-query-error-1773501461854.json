@@ -1,0 +1,15 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `jobs` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `jobType` varchar(64) NOT NULL,\n  `status` varchar(16) NOT NULL DEFAULT 'pending',\n  `payload` json DEFAULT ('{}'),\n  `result` json,\n  `error` text,\n  `startedAt` timestamp,\n  `finishedAt` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `jobs_id` PRIMARY KEY(`id`)\n);\n\nCREATE INDEX `idx_jobs_userId_type` ON `jobs` (`userId`, `jobType`);\nCREATE INDEX `idx_jobs_status` ON `jobs` (`status`);\n\nCREATE TABLE IF NOT EXISTS `ai_audit_log` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `promptModule` varchar(64) NOT NULL,\n  `entityType` varchar(32),\n  `entityId` int,\n  `success` int NOT NULL DEFAULT 1,\n  `usedFallback` int NOT NULL DEFAULT 0,\n  `errorMessage` text,\n  `durationMs` int,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `ai_audit_log_id` PRIMARY KEY(`id`)\n);\n\nCREATE INDEX `idx_ai_audit_userId` ON `ai_audit_log` (`userId`);\nCREATE INDEX `idx_ai_audit_module` ON `ai_audit_log` (`promptModule`);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute CREATE TABLE IF NOT EXISTS `jobs` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `jobType` varchar(64) NOT NULL,\n  `status` varchar(16) NOT NULL DEFAULT 'pending',\n  `payload` json DEFAULT ('{}'),\n  `result` json,\n  `error` text,\n  `startedAt` timestamp,\n  `finishedAt` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `jobs_id` PRIMARY KEY(`id`)\n);\n\nCREATE INDEX `idx_jobs_userId_type` ON `jobs` (`userId`, `jobType`);\nCREATE INDEX `idx_jobs_status` ON `jobs` (`status`);\n\nCREATE TABLE IF NOT EXISTS `ai_audit_log` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `promptModule` varchar(64) NOT NULL,\n  `entityType` varchar(32),\n  `entityId` int,\n  `success` int NOT NULL DEFAULT 1,\n  `usedFallback` int NOT NULL DEFAULT 0,\n  `errorMessage` text,\n  `durationMs` int,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `ai_audit_log_id` PRIMARY KEY(`id`)\n);\n\nCREATE INDEX `idx_ai_audit_userId` ON `ai_audit_log` (`userId`);\nCREATE INDEX `idx_ai_audit_module` ON `ai_audit_log` (`promptModule`);",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 6 column 31 near \"'{}'),",
+    "  `result` json,",
+    "  `error` text,",
+    "  `startedAt` timestamp,",
+    "  `finishedAt` timestamp,",
+    "  `createdAt` timestamp NOT NULL DEFAULT (now()),",
+    "  CONSTRAINT `jobs_id` PRIMARY KEY(`id`)",
+    ")\""
+  ]
+}
