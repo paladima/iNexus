@@ -89,6 +89,8 @@ App Server (Express+tRPC)     Worker Process (job processor)
 ## Environment Variables
 
 All secrets are managed through the Manus Management UI (Settings > Secrets).
+For a complete reference of all environment variables, see [`docs/ENV_REFERENCE.md`](docs/ENV_REFERENCE.md).
+
 Key variables:
 
 | Variable | Purpose |

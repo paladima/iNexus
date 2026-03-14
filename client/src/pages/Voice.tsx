@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
+import { PersonResolver } from "@/components/PersonResolver";
 
 type VoiceStep = "idle" | "recording" | "processing" | "review" | "saving" | "saved" | "error";
 
@@ -31,6 +32,7 @@ export default function Voice() {
   const [parsedResult, setParsedResult] = useState<any>(null);
   const [editingItems, setEditingItems] = useState<Record<string, any>>({});
   const [removedItems, setRemovedItems] = useState<Set<string>>(new Set());
+  const [resolvedPersons, setResolvedPersons] = useState<Record<string, { id: number; fullName: string } | null>>({});
   const [errorMsg, setErrorMsg] = useState("");
   const [lastAudioUrl, setLastAudioUrl] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -75,6 +77,7 @@ export default function Voice() {
       setParsedResult(null);
       setEditingItems({});
       setRemovedItems(new Set());
+      setResolvedPersons({});
       setErrorMsg("");
     } catch {
       toast.error("Microphone access denied");
@@ -233,6 +236,7 @@ export default function Voice() {
     setParsedResult(null);
     setEditingItems({});
     setRemovedItems(new Set());
+    setResolvedPersons({});
     setErrorMsg("");
     setLastAudioUrl("");
   };
@@ -458,7 +462,16 @@ export default function Voice() {
                         ) : (
                           <>
                             <div className="flex-1">
-                              <span className="font-medium">{p.name}</span>
+                              <div className="flex items-center flex-wrap gap-1">
+                                <span className="font-medium">{p.name}</span>
+                                {step === "review" && (
+                                  <PersonResolver
+                                    name={p.name}
+                                    resolvedPersonId={resolvedPersons[`people-${i}`]?.id}
+                                    onResolve={(person) => setResolvedPersons(prev => ({ ...prev, [`people-${i}`]: person }))}
+                                  />
+                                )}
+                              </div>
                               {p.context && (
                                 <span className="text-muted-foreground"> — {p.context}</span>
                               )}
@@ -596,7 +609,16 @@ export default function Voice() {
                         ) : (
                           <>
                             <div className="flex-1">
-                              <span className="font-medium">{n.personName}:</span>{" "}
+                              <div className="flex items-center flex-wrap gap-1">
+                                <span className="font-medium">{n.personName}:</span>
+                                {step === "review" && n.personName && (
+                                  <PersonResolver
+                                    name={n.personName}
+                                    resolvedPersonId={resolvedPersons[`notes-${i}`]?.id}
+                                    onResolve={(person) => setResolvedPersons(prev => ({ ...prev, [`notes-${i}`]: person }))}
+                                  />
+                                )}
+                              </div>
                               <span className="text-muted-foreground">{n.content}</span>
                             </div>
                             <div className="flex gap-1 shrink-0">

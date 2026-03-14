@@ -105,6 +105,13 @@ export const voiceRouter = router({
       return repo.getVoiceCaptureById(ctx.user.id, input.id);
     }),
 
+  /** Resolve person candidates for ambiguity resolution (#23 v15) */
+  resolvePersonName: protectedProcedure
+    .input(z.object({ name: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return voiceService.resolvePersonCandidates(ctx.user.id, input.name);
+    }),
+
   /** Unlinked notes management (#13 v11) */
   unlinkedNotes: protectedProcedure
     .input(z.object({

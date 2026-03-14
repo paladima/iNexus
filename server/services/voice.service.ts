@@ -7,7 +7,7 @@ import { transcribeAudio } from "../_core/voiceTranscription";
 import { storagePut } from "../storage";
 import * as repo from "../repositories";
 import { getProviderWithFallback } from "../providers/registry";
-import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
+import { isFuzzyNameMatch, nameSimilarity } from "../utils/fuzzyMatch";
 import type { VoiceParserProvider, VoiceParseResult } from "../providers/types";
 
 // ─── Upload Audio ───────────────────────────────────────────────
@@ -174,6 +174,37 @@ export async function confirmVoiceActions(
   });
 
   return results;
+}
+
+// ─── Resolve Person Candidates (#23 v15) ───────────────────────
+/**
+ * Given a name from voice input, find all matching contacts.
+ * Returns ranked candidates so the UI can show a selection list
+ * when multiple fuzzy matches are found (ambiguity resolution).
+ */
+export async function resolvePersonCandidates(
+  userId: number,
+  name: string
+): Promise<Array<{ id: number; fullName: string; company: string | null; title: string | null; similarity: number }>> {
+  if (!name || name.trim().length === 0) return [];
+
+  const { items } = await repo.getPeople(userId, { search: name, limit: 20 });
+  if (items.length === 0) return [];
+
+  // Score each candidate by name similarity
+  const scored = items
+    .map((p) => ({
+      id: p.id,
+      fullName: p.fullName,
+      company: (p as any).company ?? null,
+      title: (p as any).title ?? null,
+      similarity: nameSimilarity(name, p.fullName),
+    }))
+    .filter((c) => c.similarity >= 0.5) // only plausible matches
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, 10);
+
+  return scored;
 }
 
 // ─── Get Voice Capture by ID ────────────────────────────────────
