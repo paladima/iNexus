@@ -5,41 +5,20 @@
 
 // ─── Discovery Provider ────────────────────────────────────────
 
-/** Structured intent extracted from a raw user query. */
-export interface DiscoveryIntent {
-  topic: string;
-  role?: string;
-  geo?: string;
-  industry?: string;
-  speaker?: boolean;
-  skills?: string[];
-  negatives?: string[];
-  queryVariants?: string[];
-  /** Original language detected (e.g. "ru", "en") */
-  originalLanguage?: string;
-  /** Normalized English version of the query */
-  normalizedQuery?: string;
-  /** Confidence score for the parsed intent (0.0-1.0) */
-  confidence?: number;
-}
+// Import from shared schema module (#5 v13) and re-export
+import type {
+  DiscoveryIntent as _DiscoveryIntent,
+  DiscoveryResult as _DiscoveryResult,
+  NormalizedQuery as _NormalizedQuery,
+  IntentDecomposition as _IntentDecomposition,
+  DiscoveryMeta as _DiscoveryMeta,
+} from "../../shared/discoverIntent.schema";
 
-/** A single person result from discovery. */
-export interface DiscoveryResult {
-  fullName: string;
-  title?: string;
-  company?: string;
-  location?: string;
-  linkedinUrl?: string;
-  websiteUrl?: string;
-  sourceType?: string;
-  relevanceScore?: number;
-  scoring?: Record<string, number>;
-  matchReasons?: string[];
-  whyRelevant?: string;
-  /** Which query variant produced this result */
-  sourceQuery?: string;
-  [key: string]: unknown;
-}
+export type DiscoveryIntent = _DiscoveryIntent;
+export type DiscoveryResult = _DiscoveryResult;
+export type NormalizedQuery = _NormalizedQuery;
+export type IntentDecomposition = _IntentDecomposition;
+export type DiscoveryMeta = _DiscoveryMeta;
 
 /**
  * DiscoveryProvider — full pipeline with stable contract:

@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
 import * as peopleService from "../services/people.service";
+import * as peopleMerge from "../services/people.merge";
 
 export const peopleRouter = router({
   list: protectedProcedure
@@ -110,6 +111,24 @@ export const peopleRouter = router({
         return await peopleService.generatePersonSummary(ctx.user.id, input.personId);
       } catch (e: any) {
         throw new TRPCError({ code: "NOT_FOUND", message: e.message });
+      }
+    }),
+
+  /** Find potential duplicates for a person (#15 v13) */
+  findDuplicates: protectedProcedure
+    .input(z.object({ personId: z.number(), threshold: z.number().optional() }))
+    .query(async ({ ctx, input }) => {
+      return peopleMerge.findDuplicates(ctx.user.id, input.personId, input.threshold);
+    }),
+
+  /** Merge two people: survivor absorbs merged record (#15 v13) */
+  merge: protectedProcedure
+    .input(z.object({ survivorId: z.number(), mergedId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await peopleMerge.mergePeople(ctx.user.id, input.survivorId, input.mergedId);
+      } catch (e: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
       }
     }),
 });

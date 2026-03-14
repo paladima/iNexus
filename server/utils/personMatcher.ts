@@ -5,7 +5,7 @@
  * Combines exact index lookups (linkedinUrl, websiteUrl, name+company)
  * with fuzzy name matching via Levenshtein distance.
  */
-import { isFuzzyNameMatch } from "./fuzzyMatch";
+import { isFuzzyNameMatch, nameSimilarity } from "./fuzzyMatch";
 
 export interface PersonCandidate {
   id: number;
@@ -108,6 +108,71 @@ export function matchPerson(
   if (fuzzyMatch) return { matched: true, existingId: fuzzyMatch.id, matchType: "fuzzy_name" };
 
   return { matched: false };
+}
+
+// ─── Person Similarity Scoring (#14 v13) ────────────────────────
+
+export interface PersonSimilarityScore {
+  overall: number;       // 0.0 - 1.0 composite score
+  nameScore: number;     // 0.0 - 1.0
+  companyScore: number;  // 0.0 - 1.0
+  urlScore: number;      // 0.0 or 1.0 (exact match)
+  matchType: "linkedin" | "website" | "exact_name" | "fuzzy_name" | "no_match";
+}
+
+/**
+ * Score how similar two person records are (#14 v13).
+ * Returns a composite score (0.0-1.0) with breakdown by dimension.
+ *
+ * Weights: name (0.40), company (0.25), URL (0.35)
+ */
+export function scorePersonSimilarity(
+  personA: { fullName: string; company?: string | null; linkedinUrl?: string | null; websiteUrl?: string | null },
+  personB: { fullName: string; company?: string | null; linkedinUrl?: string | null; websiteUrl?: string | null }
+): PersonSimilarityScore {
+  // URL match (strongest signal)
+  let urlScore = 0;
+  let matchType: PersonSimilarityScore["matchType"] = "no_match";
+
+  if (personA.linkedinUrl && personB.linkedinUrl) {
+    if (normalizeUrl(personA.linkedinUrl) === normalizeUrl(personB.linkedinUrl)) {
+      urlScore = 1.0;
+      matchType = "linkedin";
+    }
+  }
+  if (urlScore === 0 && personA.websiteUrl && personB.websiteUrl) {
+    if (normalizeUrl(personA.websiteUrl) === normalizeUrl(personB.websiteUrl)) {
+      urlScore = 1.0;
+      matchType = "website";
+    }
+  }
+
+  // Name similarity
+  const nameScore = nameSimilarity(personA.fullName, personB.fullName);
+  if (matchType === "no_match" && nameScore >= 0.85) {
+    matchType = nameScore === 1.0 ? "exact_name" : "fuzzy_name";
+  }
+
+  // Company similarity
+  const compA = (personA.company ?? "").toLowerCase().trim();
+  const compB = (personB.company ?? "").toLowerCase().trim();
+  let companyScore = 0;
+  if (compA && compB) {
+    if (compA === compB) {
+      companyScore = 1.0;
+    } else if (compA.includes(compB) || compB.includes(compA)) {
+      companyScore = 0.8;
+    } else {
+      companyScore = nameSimilarity(compA, compB);
+    }
+  } else if (!compA && !compB) {
+    companyScore = 0.5; // Both empty — neutral
+  }
+
+  // Composite: name (0.40), company (0.25), URL (0.35)
+  const overall = Math.round((nameScore * 0.40 + companyScore * 0.25 + urlScore * 0.35) * 100) / 100;
+
+  return { overall, nameScore, companyScore, urlScore, matchType };
 }
 
 /**
