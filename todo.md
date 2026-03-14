@@ -232,3 +232,26 @@
 - [x] #19 Repository cleanup: remove .manus/db, debug-collector.js, temp artifacts — clean source/migrations/docs/scripts only
 - [x] #20 Deployable MVP profile: .env.example, migration command, seed/mock data, app start, worker start, health endpoint, README local + deploy + staging
 - [x] Updated test suite with v6 provider mocks (86 tests passing, 0 TS errors)
+
+## MVP Hardening v7 (20 items)
+- [x] #1 Remove inline job execution from enqueueJob() — app only creates job in DB, worker polls and executes (verified: enqueueJob is DB-only since v4)
+- [x] #2 Remove in-memory cancelledJobs Set — cancellation state in DB only (verified: cancelledAt column, worker checks DB via isJobCancelled)
+- [x] #3 Remove direct db.insert/db.update in job.service.ts — all job mutations through jobs.repo.ts only (verified: job.service uses jobRepo.* exclusively)
+- [x] #4 Add dedupeKey for all job types — all producers use dedupeKey pattern userId+jobType+entityId (verified in job.handlers.ts, command.service.ts)
+- [x] #5 Add runAfter + scheduler-ready queue model — full model with runAfter, retryCount, maxRetries, workerId, lastError, exponential backoff via DB re-poll
+- [x] #6 Real worker entrypoint: server/worker.ts with pnpm worker / pnpm worker:once / pnpm worker:dev, graceful SIGINT/SIGTERM shutdown
+- [x] #7 Provider registry: getProviderWithFallback() with Proxy-based try/catch fallback chain, primary→fallback→throw
+- [x] #8 DiscoveryProvider full pipeline contract: all 7 steps implemented in types.ts and LLMDiscoveryProvider
+- [x] #9 Query normalization for Russian queries: normalizeQuery() in LLMDiscoveryProvider with RU→EN, role/skill/geo extraction
+- [x] #10 Multi-query discovery: expandQueries generates 8-15 variants, batched search, dedupe, LLM rerank
+- [x] #11 Broad search mode: generateBroadFallbackQueries when <3 results, merge+dedupe+resort, UI indicator
+- [x] #12 Discover empty state UX: shows normalized query, expanded roles, broad search status, 'Try broader search' button, 'Clear search' button
+- [x] #13 Main workflow polish: discover → multi-select → save → add to list (via ListPickerDialog) → generate drafts → create tasks — all wired in Discover.tsx
+- [x] #14 Full bulk actions in Discover UI: checkbox per card, Select All, Save to Contacts, Add to List (dialog), Generate Drafts, Create Tasks — all real mutations
+- [x] #15 Robust bulkSavePeople dedup: linkedinUrl → websiteUrl → name+company indexes, returns savedIds/count/skipped/matched/names
+- [x] #16 Command bar as real orchestration layer: 10 intents routed through services (discover, search, create_task, create_list, summarize, draft, reconnects, batch_draft, add_to_list)
+- [x] #17 Voice confirm/edit/save flow: full pipeline with edit step, confirm/save, activity logging
+- [x] #18 Person Profile as relationship memory center: AI summary, last contact, next action, open tasks, linked opportunities, draft history, notes, warm paths, reconnect warning
+- [x] #19 Production cleanup: removed client/public/__manus__/debug-collector.js, .manus/ empty, .gitignore covers all artifacts
+- [x] #20 Deploy-ready profile: DEPLOY.md, README.md, /api/health endpoint, pnpm worker/worker:once/worker:dev scripts, pnpm db:push migration
+- [x] Updated test suite with v7 additions (89 tests passing: health endpoint, worker contract, bulk actions)

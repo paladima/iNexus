@@ -10,7 +10,10 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "worker": "NODE_ENV=production tsx server/worker.ts",
+    "worker:once": "NODE_ENV=production tsx server/worker.ts --once",
+    "worker:dev": "NODE_ENV=development tsx watch server/worker.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",

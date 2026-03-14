@@ -12,10 +12,11 @@ import {
 import {
   Search, UserPlus, Loader2, Sparkles, Globe, Brain,
   ChevronDown, ChevronUp, BarChart3, Languages, AlertTriangle,
-  ListPlus, FileText, CheckSquare, Users,
+  ListPlus, FileText, CheckSquare, Users, CalendarPlus,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
+import { ListPickerDialog } from "@/components/ListPickerDialog";
 
 interface ScoringBreakdown {
   roleMatch?: number;
@@ -49,8 +50,9 @@ export default function Discover() {
   const [usedBroadFallback, setUsedBroadFallback] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
-  const [showIntent, setShowIntent] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [showIntent, setShowIntent] = useState(false);
+  const [listPickerOpen, setListPickerOpen] = useState(false);
 
   const searchMutation = trpc.discover.search.useMutation({
     onSuccess: (data) => {
@@ -69,7 +71,33 @@ export default function Discover() {
   const bulkSaveMutation = trpc.discover.bulkSave.useMutation({
     onSuccess: (data) => {
       toast.success(`Saved ${data.count} people (${data.skipped + data.matched} skipped as duplicates)`);
+      // Store saved IDs for subsequent bulk actions
+      setSavedPersonIds((prev) => [...prev, ...(data.savedIds ?? [])]);
       setSelectedIndices(new Set());
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Track IDs of people saved in this session for bulk actions
+  const [savedPersonIds, setSavedPersonIds] = useState<number[]>([]);
+
+  const bulkAddToListMutation = trpc.discover.bulkAddToList.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Added ${data.added} people to list`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const bulkGenerateDraftsMutation = trpc.discover.bulkGenerateDrafts.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Queued draft generation for ${data.count} people. Check Drafts page shortly.`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const bulkCreateTasksMutation = trpc.discover.bulkCreateTasks.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Created ${data.count} follow-up tasks`);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -77,6 +105,13 @@ export default function Discover() {
   const handleSearch = () => {
     if (!query.trim()) return;
     searchMutation.mutate({ query: query.trim() });
+  };
+
+  const handleBroaderSearch = () => {
+    if (!query.trim()) return;
+    // Append "broader" hint to trigger wider results
+    const broaderQuery = `${query.trim()} (broader search, relax constraints)`;
+    searchMutation.mutate({ query: broaderQuery });
   };
 
   const toggleExpand = (index: number) => {
@@ -110,6 +145,7 @@ export default function Discover() {
     [selectedIndices, results]
   );
 
+  // ─── Bulk Save + Return IDs ──────────────────────────────────
   const handleBulkSave = () => {
     if (selectedPeople.length === 0) return;
     bulkSaveMutation.mutate({
@@ -126,6 +162,110 @@ export default function Discover() {
     });
   };
 
+  // ─── Bulk Save → Add to List ─────────────────────────────────
+  const handleBulkSaveAndAddToList = () => {
+    if (selectedPeople.length === 0) return;
+    // First save, then open list picker
+    bulkSaveMutation.mutate(
+      {
+        people: selectedPeople.map((p: any) => ({
+          fullName: p.fullName,
+          title: p.title,
+          company: p.company,
+          location: p.location,
+          linkedinUrl: p.linkedinUrl,
+          websiteUrl: p.websiteUrl,
+          sourceType: p.sourceType ?? "discovery",
+          relevanceScore: p.relevanceScore?.toString(),
+        })),
+      },
+      {
+        onSuccess: (data) => {
+          toast.success(`Saved ${data.count} people`);
+          if (data.savedIds && data.savedIds.length > 0) {
+            setSavedPersonIds(data.savedIds);
+            setListPickerOpen(true);
+          } else {
+            toast.info("All selected people were already saved. Opening list picker for existing contacts.");
+            setListPickerOpen(true);
+          }
+        },
+      }
+    );
+  };
+
+  const handleListSelected = (listId: number, listName: string) => {
+    if (savedPersonIds.length === 0) {
+      toast.info("No saved people to add to list");
+      return;
+    }
+    bulkAddToListMutation.mutate({ personIds: savedPersonIds, listId });
+  };
+
+  // ─── Bulk Save → Generate Drafts ─────────────────────────────
+  const handleBulkSaveAndDraft = () => {
+    if (selectedPeople.length === 0) return;
+    bulkSaveMutation.mutate(
+      {
+        people: selectedPeople.map((p: any) => ({
+          fullName: p.fullName,
+          title: p.title,
+          company: p.company,
+          location: p.location,
+          linkedinUrl: p.linkedinUrl,
+          websiteUrl: p.websiteUrl,
+          sourceType: p.sourceType ?? "discovery",
+          relevanceScore: p.relevanceScore?.toString(),
+        })),
+      },
+      {
+        onSuccess: (data) => {
+          if (data.savedIds && data.savedIds.length > 0) {
+            bulkGenerateDraftsMutation.mutate({
+              personIds: data.savedIds,
+              tone: "professional",
+            });
+          } else {
+            toast.info("All selected people were already saved. No new drafts generated.");
+          }
+        },
+      }
+    );
+  };
+
+  // ─── Bulk Save → Create Tasks ─────────────────────────────────
+  const handleBulkSaveAndCreateTasks = () => {
+    if (selectedPeople.length === 0) return;
+    bulkSaveMutation.mutate(
+      {
+        people: selectedPeople.map((p: any) => ({
+          fullName: p.fullName,
+          title: p.title,
+          company: p.company,
+          location: p.location,
+          linkedinUrl: p.linkedinUrl,
+          websiteUrl: p.websiteUrl,
+          sourceType: p.sourceType ?? "discovery",
+          relevanceScore: p.relevanceScore?.toString(),
+        })),
+      },
+      {
+        onSuccess: (data) => {
+          if (data.savedIds && data.savedIds.length > 0) {
+            bulkCreateTasksMutation.mutate({
+              personIds: data.savedIds,
+              taskPrefix: "Follow up with",
+              priority: "medium",
+              daysFromNow: 3,
+            });
+          } else {
+            toast.info("All selected people were already saved.");
+          }
+        },
+      }
+    );
+  };
+
   const scoreLabel = (key: string) => {
     const labels: Record<string, string> = {
       roleMatch: "Role Match",
@@ -137,6 +277,12 @@ export default function Discover() {
     };
     return labels[key] ?? key;
   };
+
+  const isBulkBusy =
+    bulkSaveMutation.isPending ||
+    bulkAddToListMutation.isPending ||
+    bulkGenerateDraftsMutation.isPending ||
+    bulkCreateTasksMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -175,19 +321,19 @@ export default function Discover() {
         </Button>
       </div>
 
-      {/* Normalization Info (#3) */}
+      {/* Normalization Info (#9) */}
       {normalization && normalization.language !== "en" && hasSearched && !searchMutation.isPending && (
         <Card className="border-blue-500/20 bg-blue-500/5">
           <CardContent className="p-3 flex items-center gap-2">
             <Languages className="h-4 w-4 text-blue-400 shrink-0" />
             <span className="text-sm text-blue-300">
-              Translated from <strong>{normalization.language.toUpperCase()}</strong>: &quot;{normalization.original}&quot; → &quot;{normalization.normalized}&quot;
+              Translated from <strong>{normalization.language.toUpperCase()}</strong>: &quot;{normalization.original}&quot; &rarr; &quot;{normalization.normalized}&quot;
             </span>
           </CardContent>
         </Card>
       )}
 
-      {/* Broad Fallback Indicator (#1) */}
+      {/* Broad Fallback Indicator (#11) */}
       {usedBroadFallback && hasSearched && !searchMutation.isPending && (
         <Card className="border-yellow-500/20 bg-yellow-500/5">
           <CardContent className="p-3 flex items-center gap-2">
@@ -291,17 +437,56 @@ export default function Discover() {
         </div>
       )}
 
-      {/* No Results */}
+      {/* No Results — enhanced with "Try broader search" button (#12) */}
       {!searchMutation.isPending && hasSearched && results.length === 0 && (
         <div className="text-center py-16">
           <Globe className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
-          <p className="text-muted-foreground">
-            No results found. Try a different search query or broader terms.
+          <p className="text-muted-foreground mb-2">
+            No results found for &quot;{query}&quot;.
           </p>
+          {normalization && (
+            <p className="text-xs text-muted-foreground mb-1">
+              Normalized query: &quot;{normalization.normalized}&quot;
+            </p>
+          )}
+          {intent?.role && (
+            <p className="text-xs text-muted-foreground mb-1">
+              Expanded roles: {intent.role}
+              {intent.skills?.length > 0 ? `, skills: ${intent.skills.join(", ")}` : ""}
+            </p>
+          )}
+          {usedBroadFallback && (
+            <p className="text-xs text-yellow-400 mb-3">
+              Broad search was already enabled but found no matches.
+            </p>
+          )}
+          <div className="flex justify-center gap-3 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBroaderSearch}
+              disabled={searchMutation.isPending}
+              className="gap-1.5"
+            >
+              <Search className="h-3.5 w-3.5" />
+              Try broader search
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setQuery("");
+                setHasSearched(false);
+                setResults([]);
+              }}
+            >
+              Clear search
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* Bulk Actions Bar (#5-6) */}
+      {/* Bulk Actions Bar (#14) — fully wired */}
       {results.length > 0 && (
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
@@ -314,34 +499,62 @@ export default function Discover() {
             </span>
           </div>
           {selectedIndices.size > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 variant="default"
                 size="sm"
                 onClick={handleBulkSave}
-                disabled={bulkSaveMutation.isPending}
+                disabled={isBulkBusy}
                 className="gap-1.5"
               >
-                <Users className="h-3.5 w-3.5" />
+                {bulkSaveMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Users className="h-3.5 w-3.5" />
+                )}
                 Save {selectedIndices.size} to Contacts
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => toast("Feature coming soon", { description: "Bulk add to list from discovery" })}
+                onClick={handleBulkSaveAndAddToList}
+                disabled={isBulkBusy}
                 className="gap-1.5"
               >
-                <ListPlus className="h-3.5 w-3.5" />
+                {bulkAddToListMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ListPlus className="h-3.5 w-3.5" />
+                )}
                 Add to List
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => toast("Feature coming soon", { description: "Bulk generate drafts from discovery" })}
+                onClick={handleBulkSaveAndDraft}
+                disabled={isBulkBusy}
                 className="gap-1.5"
               >
-                <FileText className="h-3.5 w-3.5" />
+                {bulkGenerateDraftsMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
                 Generate Drafts
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkSaveAndCreateTasks}
+                disabled={isBulkBusy}
+                className="gap-1.5"
+              >
+                {bulkCreateTasksMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CalendarPlus className="h-3.5 w-3.5" />
+                )}
+                Create Tasks
               </Button>
             </div>
           )}
@@ -531,6 +744,15 @@ export default function Discover() {
           </div>
         </div>
       )}
+
+      {/* List Picker Dialog for bulk "Add to List" */}
+      <ListPickerDialog
+        open={listPickerOpen}
+        onOpenChange={setListPickerOpen}
+        onSelect={handleListSelected}
+        title="Add People to List"
+        description="Select a list to add the saved people to, or create a new one."
+      />
     </div>
   );
 }
