@@ -8,6 +8,7 @@
  */
 
 import * as jobRepo from "../repositories/jobs.repo"; // Direct import OK: job.service is infrastructure-level, not business logic
+import { startTimer } from "../utils/perfLogger";
 
 type JobHandler = (jobId: number, userId: number, payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
@@ -119,6 +120,7 @@ async function processJob(job: jobRepo.JobRow) {
 
   // Claim the job
   await jobRepo.claimJob(job.id, WORKER_ID);
+  const timer = startTimer("job.execute");
 
   try {
     const result = await handler(job.id, job.userId, (job.payload ?? {}) as Record<string, unknown>);
@@ -127,8 +129,10 @@ async function processJob(job: jobRepo.JobRow) {
     const refreshed = await jobRepo.getJobById(job.id);
     if (refreshed?.cancelledAt) return;
 
+    timer.end({ jobId: job.id, jobType: job.jobType, success: true });
     await jobRepo.completeJob(job.id, result);
   } catch (error) {
+    timer.end({ jobId: job.id, jobType: job.jobType, success: false });
     const errorMessage = error instanceof Error ? error.message : String(error);
     const attempt = (job.retryCount ?? 0) + 1;
     const maxRetries = job.maxRetries ?? 3;

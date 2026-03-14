@@ -7,12 +7,15 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
 import * as voiceService from "../services/voice.service";
 import * as unlinkedNotesService from "../services/unlinkedNotes.service";
+import { trackEvent } from "../services/analytics.service";
 
 export const voiceRouter = router({
   uploadAudio: protectedProcedure
     .input(z.object({ audioBase64: z.string(), mimeType: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      return voiceService.uploadAudio(ctx.user.id, input.audioBase64, input.mimeType);
+      const result = await voiceService.uploadAudio(ctx.user.id, input.audioBase64, input.mimeType);
+      trackEvent(ctx.user.id, "voice_uploaded", { source: "voice" }).catch(() => {});
+      return result;
     }),
 
   transcribe: protectedProcedure
@@ -57,13 +60,18 @@ export const voiceRouter = router({
       })).default([]),
     }))
     .mutation(async ({ ctx, input }) => {
-      return voiceService.confirmVoiceActions(
+      const result = await voiceService.confirmVoiceActions(
         ctx.user.id,
         input.captureId,
         input.people,
         input.tasks,
         input.notes
       );
+      trackEvent(ctx.user.id, "voice_confirmed", {
+        source: "voice",
+        itemCount: (input.people?.length ?? 0) + (input.tasks?.length ?? 0) + (input.notes?.length ?? 0),
+      }).catch(() => {});
+      return result;
     }),
 
   editCapture: protectedProcedure

@@ -17,11 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileText, Check, Trash2, Edit3, Copy, AlertCircle } from "lucide-react";
+import { FileText, Check, Trash2, Edit3, Copy, AlertCircle, Users } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 export default function Drafts() {
+  const [, setLocation] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [editDraft, setEditDraft] = useState<any>(null);
   const [editBody, setEditBody] = useState("");
@@ -193,9 +195,13 @@ export default function Drafts() {
         <div className="text-center py-16">
           <FileText className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
           <h3 className="font-semibold text-lg mb-2">No drafts yet</h3>
-          <p className="text-sm text-muted-foreground">
-            Generate drafts from a person&apos;s profile page.
+          <p className="text-sm text-muted-foreground mb-4">
+            Generate drafts from a person&apos;s profile page or use Discover to bulk-generate.
           </p>
+          <Button variant="outline" onClick={() => setLocation("/people")}>
+            <Users className="h-4 w-4 mr-1" />
+            Go to People
+          </Button>
         </div>
       )}
 

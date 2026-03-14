@@ -11,6 +11,7 @@ import { getAction, hasAction } from "./action.registry";
 import type { ActionContext, ActionResult, DispatchRequest } from "./action.types";
 import { dispatchRequestSchema } from "./action.types";
 import * as repo from "../repositories";
+import { trackActionDispatch } from "../services/analytics.service";
 
 /**
  * Dispatch an action by ID.
@@ -86,6 +87,9 @@ export async function dispatch(
   } catch {
     // Activity logging is best-effort — don't fail the action
   }
+
+  // 7. Track analytics event (best-effort, non-blocking)
+  trackActionDispatch(userId, parsed.actionId, parsed.source, result.success, durationMs).catch(() => {});
 
   return result;
 }

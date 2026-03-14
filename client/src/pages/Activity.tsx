@@ -86,8 +86,11 @@ export default function ActivityPage() {
         <div className="text-center py-16">
           <Activity className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
           <h3 className="font-semibold text-lg mb-2">No activity yet</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-1">
             Your actions will appear here as you use iNexus.
+          </p>
+          <p className="text-xs text-muted-foreground/60">
+            Try discovering people, creating tasks, or recording a voice note to get started.
           </p>
         </div>
       )}

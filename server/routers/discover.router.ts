@@ -5,6 +5,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as discoverService from "../services/discover.service";
+import { trackEvent } from "../services/analytics.service";
 
 const personInputSchema = z.object({
   fullName: z.string(),
@@ -24,7 +25,14 @@ export const discoverRouter = router({
       filters: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return discoverService.executeSearch(ctx.user.id, input.query, input.filters as Record<string, unknown>);
+      const startMs = Date.now();
+      const result = await discoverService.executeSearch(ctx.user.id, input.query, input.filters as Record<string, unknown>);
+      trackEvent(ctx.user.id, "search_submitted", {
+        query: input.query,
+        resultCount: result.results?.length ?? 0,
+        durationMs: Date.now() - startMs,
+      }).catch(() => {});
+      return result;
     }),
 
   savePerson: protectedProcedure

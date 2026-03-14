@@ -18,6 +18,7 @@ import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
 import { buildPersonIndex, matchPerson, type PersonCandidate } from "../utils/personMatcher";
 import type { DiscoveryProvider, DiscoveryResult, DiscoveryIntent } from "../providers/types";
 import { expandQueryWithSynonyms } from "../utils/skillSynonyms";
+import { startTimer } from "../utils/perfLogger";
 
 const MIN_RESULTS_THRESHOLD = 3;
 const MAX_QUERY_VARIANTS = 12;
@@ -35,6 +36,7 @@ export async function executeSearch(
   query: string,
   filters?: Record<string, unknown>
 ) {
+  const timer = startTimer("discover.search");
   const provider = requireDiscoveryProvider();
   const goals = await repo.getUserGoals(userId);
 
@@ -169,6 +171,8 @@ export async function executeSearch(
       intent: intent as unknown as Record<string, unknown>,
     },
   });
+
+  timer.end({ query, resultCount: allResults.length, queryVariantCount: queryVariants.length, usedBroadFallback });
 
   return {
     queryId,

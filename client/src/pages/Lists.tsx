@@ -128,9 +128,13 @@ export default function Lists() {
         <div className="text-center py-16">
           <ListChecks className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
           <h3 className="font-semibold text-lg mb-2">No lists yet</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-4">
             Create lists to organize your contacts by category.
           </p>
+          <Button variant="outline" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Create Your First List
+          </Button>
         </div>
       )}
     </div>

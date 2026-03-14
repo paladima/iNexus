@@ -13,3 +13,4 @@ export * as activityService from "./activity.service";
 export * as unlinkedNotesService from "./unlinkedNotes.service";
 export * as relationshipService from "./relationship.service";
 export * as opportunityScoringService from "./opportunityScoring.service";
+export * as analyticsService from "./analytics.service";

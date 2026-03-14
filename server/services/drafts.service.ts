@@ -6,6 +6,7 @@
 import * as repo from "../repositories";
 import { getProviderWithFallback } from "../providers/registry";
 import type { DraftProvider } from "../providers/types";
+import { startTimer } from "../utils/perfLogger";
 
 function requireDraftProvider(): DraftProvider {
   const provider = getProviderWithFallback("draft") as DraftProvider | undefined;
@@ -20,6 +21,7 @@ export async function generateOutreachDraft(
   context?: string,
   channel: string = "email"
 ) {
+  const timer = startTimer("draft.generate");
   const person = await repo.getPersonById(userId, personId);
   if (!person) throw new Error("Person not found");
 
@@ -52,6 +54,7 @@ export async function generateOutreachDraft(
     entityId: id ?? undefined,
   });
 
+  timer.end({ personId, tone, channel });
   return { id, ...result };
 }
 

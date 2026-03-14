@@ -9,6 +9,7 @@ import * as repo from "../repositories";
 import { getProviderWithFallback } from "../providers/registry";
 import { isFuzzyNameMatch, nameSimilarity } from "../utils/fuzzyMatch";
 import type { VoiceParserProvider, VoiceParseResult } from "../providers/types";
+import { startTimer } from "../utils/perfLogger";
 
 // ─── Upload Audio ───────────────────────────────────────────────
 export async function uploadAudio(userId: number, audioBase64: string, mimeType: string) {
@@ -21,15 +22,19 @@ export async function uploadAudio(userId: number, audioBase64: string, mimeType:
 
 // ─── Transcribe ─────────────────────────────────────────────────
 export async function transcribeAudioFile(audioUrl: string, language?: string) {
+  const timer = startTimer("voice.transcribe");
   const result = await transcribeAudio({ audioUrl, language });
   if ("error" in result) {
+    timer.end({ success: false });
     throw new Error(result.error);
   }
+  timer.end({ language: result.language, segmentCount: result.segments?.length });
   return result;
 }
 
 // ─── Parse Transcript (provider-first) ──────────────────────────
 export async function parseVoiceIntent(userId: number, transcript: string): Promise<{ id: number | null } & VoiceParseResult> {
+  const timer = startTimer("voice.parse");
   const provider = getProviderWithFallback("voiceParser") as VoiceParserProvider | undefined;
   if (!provider) throw new Error("VoiceParserProvider not registered");
 
@@ -54,6 +59,7 @@ export async function parseVoiceIntent(userId: number, transcript: string): Prom
     },
   });
 
+  timer.end({ peopleCount: parsed.people.length, taskCount: parsed.tasks.length, noteCount: parsed.notes.length });
   return { id: captureId, ...parsed };
 }
 

@@ -502,3 +502,28 @@
 ### Tests
 - [x] 25 unit tests in v16actions.test.ts: registry CRUD, dispatch schema validation, all 7 action definitions, input schemas, auto-registration
 - [x] 244 tests passing across 12 test files, 0 TS errors
+
+## v17 — Stabilization Sprint (Product Validation)
+
+### Smoke Test Checklist
+- [x] Created docs/SMOKE_TEST.md with 5 workflow chains (12+12+7+7+5 steps), regression checks, non-standard discovery queries, dedupe test cases
+
+### Product Analytics
+- [x] Created analytics.service.ts with trackEvent(userId, event, metadata) + trackActionDispatch()
+- [x] Integrated analytics into action.dispatcher.ts (automatic for all 7 actions)
+- [x] Added analytics to discover.router (search_submitted), voice.router (voice_uploaded, voice_confirmed), command.router (command_executed)
+- [x] 14 event types: search_submitted, people_saved, list_created, draft_generated, task_created, voice_uploaded, opportunity_acted, command_executed, action_dispatched, page_viewed, bulk_action, voice_confirmed, job_completed, job_failed
+
+### UX Polish
+- [x] Audited empty states: all 7 pages have icon + title + description + CTA buttons (People→Discover, Lists→Create, Drafts→People, Tasks/Opportunities/Activity have contextual guidance)
+- [x] Loading skeletons already present on all data pages (People, Lists, Tasks, Drafts, Opportunities, Activity) — verified
+- [x] Error handling: all mutations have onError toast, People/Tasks/Drafts have error state rendering — verified
+
+### Latency Logging
+- [x] Created server/utils/perfLogger.ts with startTimer(), withPerfLogging(), configurable thresholds, SLOW warnings
+- [x] Integrated perf logging into: discover.service (search), drafts.service (generate), voice.service (transcribe, parse), job.service (execute)
+- [x] Structured log format: [Perf] flow durationMs {metadata} — easy to grep/parse
+
+### Documentation
+- [x] Updated README with v17 stabilization sprint
+- [x] 258 tests passing across 13 test files (v17stabilization: 14 tests for analytics, perfLogger, smoke test doc), 0 TS errors

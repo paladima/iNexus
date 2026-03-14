@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Plus, Search, Trash2, AlertCircle } from "lucide-react";
+import { Users, Plus, Search, Trash2, AlertCircle, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -210,9 +210,15 @@ export default function People() {
         <div className="text-center py-16">
           <Users className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
           <h3 className="font-semibold text-lg mb-2">No contacts yet</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-4">
             Add people manually or discover them with AI.
           </p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => setLocation("/discover")}>
+              <Sparkles className="h-4 w-4 mr-1" />
+              Discover People
+            </Button>
+          </div>
         </div>
       )}
     </div>

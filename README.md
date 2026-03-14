@@ -52,7 +52,8 @@ Routers → Action Registry → Services → Repositories → Database
 - **Backend**: Express 4, tRPC 11, Drizzle ORM
 - **Database**: MySQL 8 / TiDB
 - **AI**: LLM-powered providers for discovery, drafts, voice parsing, opportunities
-- **Testing**: Vitest (244 tests across 12 test files)
+- **Observability**: Product analytics (14 event types), performance logging with configurable thresholds
+- **Testing**: Vitest (258 tests across 13 test files)
 
 ## Getting Started
 
@@ -87,6 +88,7 @@ shared/              Shared types & constants
 
 | Version | Focus | Tests |
 |---------|-------|-------|
+| v17 | Stabilization: smoke tests, analytics events, UX polish, perf logging | 258 |
 | v16 | Unified Action Registry + Workflow Engine, 7 core actions, useAction hook | 244 |
 | v15 | Voice ambiguity resolution, ENV reference docs | 219 |
 | v14 | BFS graph traversal, Opportunity Radar, Networking Brief widget | 208 |
