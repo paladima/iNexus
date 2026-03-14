@@ -7,11 +7,11 @@ import { callLLM } from "./llm.service";
 import { enqueueJob } from "./job.service";
 import * as discoverService from "./discover.service";
 import * as peopleService from "./people.service";
-import * as draftsService from "./drafts.service";
 import * as tasksService from "./tasks.service";
 import * as listsService from "./lists.service";
 import * as activityService from "./activity.service";
 import { findPersonByNameFuzzy, type PersonCandidate } from "../utils/personMatcher";
+import { dispatch } from "../actions";
 
 interface CommandResult {
   intent: string;
@@ -109,13 +109,17 @@ Always include a helpful "response" message.`,
             const person = await findPersonByName(userId, String(result.params.personName));
             if (person) personId = person.id;
           }
-          const id = await tasksService.createTask(userId, {
-            title: String(result.params.title),
-            priority: (result.params.priority as string) ?? "medium",
-            dueAt: result.params.dueDate ? new Date(String(result.params.dueDate)) : undefined,
-            personId,
+          const dispatchResult = await dispatch(userId, {
+            actionId: "task.create",
+            input: {
+              title: String(result.params.title),
+              priority: (result.params.priority as string) ?? "medium",
+              dueDate: result.params.dueDate ? String(result.params.dueDate) : undefined,
+              personId,
+            },
+            source: "command",
           });
-          actionResult = { taskId: id, created: true };
+          actionResult = { taskId: (dispatchResult.data as any)?.id, created: dispatchResult.success };
         }
         break;
       }
@@ -157,15 +161,18 @@ Always include a helpful "response" message.`,
         if (result.params?.personName) {
           const person = await findPersonByName(userId, String(result.params.personName));
           if (person) {
-            const draft = await draftsService.generateOutreachDraft(
-              userId,
-              person.id,
-              (result.params.tone as string) ?? "professional",
-            );
+            const dispatchResult = await dispatch(userId, {
+              actionId: "draft.generate",
+              input: {
+                personId: person.id,
+                tone: (result.params.tone as string) ?? "professional",
+              },
+              source: "command",
+            });
             actionResult = {
               personId: person.id,
               personName: person.fullName,
-              draftId: draft?.id,
+              draftId: (dispatchResult.data as any)?.id,
               navigateTo: `/drafts`,
             };
           } else {
@@ -222,13 +229,17 @@ Always include a helpful "response" message.`,
           const person = await findPersonByName(userId, String(result.params.personName));
           const list = await listsService.findListByName(userId, String(result.params.listName));
           if (person && list) {
-            await discoverService.bulkAddToList(userId, list.id, [person.id]);
+            const dispatchResult = await dispatch(userId, {
+              actionId: "list.add_people",
+              input: { listId: list.id, personIds: [person.id] },
+              source: "command",
+            });
             actionResult = {
               personId: person.id,
               personName: person.fullName,
               listId: list.id,
               listName: list.name,
-              added: true,
+              added: dispatchResult.success,
             };
           } else {
             actionResult = { found: false };

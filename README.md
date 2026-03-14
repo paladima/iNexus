@@ -20,7 +20,9 @@ iNexus is a relationship intelligence tool that helps professionals discover, ma
 
 **Voice Capture** — Record voice memos, auto-transcribe, parse into structured actions (people, tasks, notes), review/edit parsed data, then save with full activity logging. Unlinked notes management.
 
-**Command Bar** — Natural language command interface that routes intents to the same services as the main UI: discover, create tasks, generate drafts, search contacts, manage lists.
+**Unified Action Registry** — Type-safe action dispatcher that unifies all entry points (command bar, voice, bulk toolbar, opportunity buttons) through a single dispatch layer. 7 core actions: people.save, list.add_people, draft.generate, task.create, task.create_followup, voice.confirm_actions, opportunity.act. Zod-validated inputs, activity logging, batch support.
+
+**Command Bar** — Natural language command interface that routes intents through the Action Registry: discover, create tasks, generate drafts, search contacts, manage lists.
 
 **Daily Brief** — AI-generated morning briefing with priorities, reconnect suggestions, and network stats.
 
@@ -29,9 +31,9 @@ iNexus is a relationship intelligence tool that helps professionals discover, ma
 ## Architecture
 
 ```
-Routers → Services → Repositories → Database
-    ↓
-  Providers (LLM, Discovery, Draft, Voice, Opportunity, Relationship, DailyBrief)
+Routers → Action Registry → Services → Repositories → Database
+    ↓              ↓
+  Providers     Dispatcher (validate → run → log → respond)
     ↓
   Job System (DB-based queue, standalone worker, dedup, retry, progress)
 ```
@@ -40,6 +42,7 @@ Routers → Services → Repositories → Database
 - Provider registry with fallback chains (primary → fallback → graceful degradation)
 - PersonMatcher utility for unified fuzzy matching and deduplication
 - Service-only architecture (no direct repo calls from command layer)
+- Unified Action Registry with type-safe dispatch, Zod validation, batch support
 - dedupeKey on all job producers (userId+jobType+entityId)
 - Graceful shutdown with SIGINT/SIGTERM handlers
 
@@ -49,7 +52,7 @@ Routers → Services → Repositories → Database
 - **Backend**: Express 4, tRPC 11, Drizzle ORM
 - **Database**: MySQL 8 / TiDB
 - **AI**: LLM-powered providers for discovery, drafts, voice parsing, opportunities
-- **Testing**: Vitest (208 tests across 10 test files)
+- **Testing**: Vitest (244 tests across 12 test files)
 
 ## Getting Started
 
@@ -69,7 +72,8 @@ client/src/          Frontend (React + Tailwind)
   components/        Reusable UI (TopActions, OpportunityRadar, DailyBriefWidget,
                      WarmPaths, IntroPathVisualizer, ActionRail, JobStatusBadge)
 server/              Backend (Express + tRPC)
-  routers/           tRPC route handlers (13 routers)
+  actions/           Unified Action Registry (types, registry, dispatcher, 7 actions)
+  routers/           tRPC route handlers (15 routers)
   services/          Business logic layer (15 services)
   repositories/      Database access layer (14 repos)
   providers/         AI provider implementations
@@ -83,6 +87,8 @@ shared/              Shared types & constants
 
 | Version | Focus | Tests |
 |---------|-------|-------|
+| v16 | Unified Action Registry + Workflow Engine, 7 core actions, useAction hook | 244 |
+| v15 | Voice ambiguity resolution, ENV reference docs | 219 |
 | v14 | BFS graph traversal, Opportunity Radar, Networking Brief widget | 208 |
 | v13 | Shared intent schema, person similarity scoring, duplicate merge | 179 |
 | v12 | Skill synonym engine, URL canonicalization, bulk insert | 167 |

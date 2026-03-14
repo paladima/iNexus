@@ -19,9 +19,11 @@ import { activityRouter, settingsRouter } from "./routers/activity.router";
 import { relationshipsRouter } from "./routers/relationships.router";
 import { jobsRouter } from "./routers/jobs.router";
 import { commandRouter } from "./routers/command.router";
+import { actionRouter } from "./routers/action.router";
 
 export const appRouter = router({
   system: systemRouter,
+  actions: actionRouter,
   auth: authRouter,
   onboarding: onboardingRouter,
   dashboard: dashboardRouter,
@@ -38,5 +40,6 @@ export const appRouter = router({
   jobs: jobsRouter,
   command: commandRouter,
 });
+
 
 export type AppRouter = typeof appRouter;

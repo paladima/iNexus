@@ -472,3 +472,33 @@
 - [x] #29 Person Profile: last contact, next action, open tasks, linked opportunities, draft history, notes, warm paths (done in v6)
 - [x] #30 Deploy profile: docs/ENV_REFERENCE.md with all env vars documented, DEPLOY.md updated with reference link
 - [x] 219 tests passing across 11 test files, 0 TS errors
+
+## v16 — Unified Action Registry + Workflow Engine
+
+### Action Layer Infrastructure
+- [x] Created server/actions/action.types.ts (ActionDefinition, ActionContext, ActionResult, ActionMode, DispatchRequest, dispatchRequestSchema)
+- [x] Created server/actions/action.registry.ts with registerAction, getAction, listActionIds, listActions, hasAction, clearRegistry
+- [x] Created server/actions/action.dispatcher.ts with dispatch(userId, request) — validation, error wrapping, activity logging, batchDispatch
+
+### Core Actions (7)
+- [x] people.save action — dedup-aware save via peopleService.savePerson
+- [x] list.add_people action — bulk add via discoverService.bulkAddToList
+- [x] draft.generate action — AI outreach via draftsService.generateOutreachDraft
+- [x] task.create action — via tasksService.createTask
+- [x] task.create_followup action — auto-calculates dueAt from daysFromNow
+- [x] voice.confirm_actions action — confirms parsed voice people/tasks/notes
+- [x] opportunity.act action — 6 sub-actions: generate_draft, create_task, generate_intro, mark_acted, archive, ignore
+
+### Consumer Rewiring
+- [x] Rewired command.service.ts — create_task, generate_draft, add_to_list now dispatch through action registry
+- [x] voice.confirm_actions action wraps voiceService.confirmVoiceActions
+- [x] Bulk toolbar available via actions.batchDispatch tRPC endpoint
+- [x] opportunity.act action wraps all opportunity service functions + markOpportunityActed
+
+### Frontend Integration
+- [x] Created action.router.ts with dispatch, batchDispatch, listActions endpoints — wired into appRouter as actions.*
+- [x] Created useAction hook (client/src/hooks/useAction.ts) with dispatch(), batchDispatch(), isLoading, sonner toast notifications
+
+### Tests
+- [x] 25 unit tests in v16actions.test.ts: registry CRUD, dispatch schema validation, all 7 action definitions, input schemas, auto-registration
+- [x] 244 tests passing across 12 test files, 0 TS errors
