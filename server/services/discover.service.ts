@@ -14,6 +14,7 @@
 import * as repo from "../repositories";
 import { enqueueJob } from "./job.service";
 import { getProviderWithFallback } from "../providers/registry";
+import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
 import type { DiscoveryProvider, DiscoveryResult, DiscoveryIntent } from "../providers/types";
 
 const MIN_RESULTS_THRESHOLD = 3;
@@ -227,13 +228,12 @@ export async function bulkSavePeople(
       continue;
     }
 
-    // Also check name-only for very similar names
-    const nameOnly = p.fullName.toLowerCase().trim();
-    const nameOnlyDup = existingPeople.some(
-      (e) => e.fullName.toLowerCase().trim() === nameOnly &&
+    // Fuzzy name matching (#10): catch "John Smith" vs "Jon Smith"
+    const fuzzyDup = existingPeople.some(
+      (e) => isFuzzyNameMatch(e.fullName, p.fullName) &&
         (!p.company || (e.company ?? "").toLowerCase().trim() === (p.company ?? "").toLowerCase().trim())
     );
-    if (nameOnlyDup) {
+    if (fuzzyDup) {
       skipped.push(p.fullName);
       continue;
     }

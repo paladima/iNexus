@@ -7,6 +7,7 @@ import { transcribeAudio } from "../_core/voiceTranscription";
 import { storagePut } from "../storage";
 import * as repo from "../repositories";
 import { getProviderWithFallback } from "../providers/registry";
+import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
 import type { VoiceParserProvider, VoiceParseResult } from "../providers/types";
 
 // ─── Upload Audio ───────────────────────────────────────────────
@@ -82,10 +83,10 @@ export async function confirmVoiceActions(
   // Save people
   for (const p of people.filter((p) => p.save)) {
     try {
-      // Dedup check
-      const { items: existing } = await repo.getPeople(userId, { search: p.name, limit: 3 });
+      // Dedup check with fuzzy matching (#10)
+      const { items: existing } = await repo.getPeople(userId, { search: p.name, limit: 10 });
       const duplicate = existing.some(
-        (e) => e.fullName.toLowerCase() === p.name.toLowerCase()
+        (e) => isFuzzyNameMatch(e.fullName, p.name)
       );
       if (duplicate) continue;
 

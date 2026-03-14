@@ -255,3 +255,26 @@
 - [x] #19 Production cleanup: removed client/public/__manus__/debug-collector.js, .manus/ empty, .gitignore covers all artifacts
 - [x] #20 Deploy-ready profile: DEPLOY.md, README.md, /api/health endpoint, pnpm worker/worker:once/worker:dev scripts, pnpm db:push migration
 - [x] Updated test suite with v7 additions (89 tests passing: health endpoint, worker contract, bulk actions)
+
+## MVP Hardening v8 (20 items)
+- [x] #1 Remove inline job execution — enqueueJob() is DB-only (verified: no inline execution since v4)
+- [x] #2 Separate worker entrypoint (server/worker.ts) with startJobProcessor, poll, process, update
+- [x] #3 Add concurrency limit (WORKER_CONCURRENCY env var, default 3) to worker
+- [x] #4 Add idempotency key (dedupeKey = userId+jobType+entityId) for all jobs
+- [x] #5 Add runAfter for scheduled jobs — worker only picks jobs where runAfter <= now (claimNextPendingJob)
+- [x] #6 Add retry policy (retryCount, maxRetries, lastError) — exponential backoff via DB re-poll
+- [x] #7 Remove direct SQL from services — all services use repo.* exclusively (verified with grep)
+- [x] #8 Strengthen repository layer — 14 repo files: people, tasks, lists, drafts, jobs, opportunities, activity, audit, briefs, dashboard, interactions, search, user, voice
+- [x] #9 Strengthen dedupe on people save — matches by linkedinUrl, websiteUrl, normalized fullName+company
+- [x] #10 Add fuzzy matching for people names — Levenshtein-based isFuzzyNameMatch() in utils/fuzzyMatch.ts, integrated into discover.service, people.service, voice.service
+- [x] #11 Complete discovery pipeline — full 8-step pipeline through DiscoveryProvider
+- [x] #12 Add query normalization — normalizeQuery() with RU→EN, skills/geo/role extraction
+- [x] #13 Add query expansion — expandQueries() generates 8-15 variants with title/skill/source diversity
+- [x] #14 Add broad search fallback — generateBroadFallbackQueries() when <3 results, merge+dedupe+resort
+- [x] #15 Improve Discover empty state — shows normalized query, expanded roles, broad search indicator, 'Try broader search' button
+- [x] #16 Complete bulk actions — checkbox per card, Select All, Save to Contacts, Add to List (ListPickerDialog), Generate Drafts, Create Tasks
+- [x] #17 Complete discover → draft → task workflow — guided flow in Discover.tsx
+- [x] #18 Complete Voice pipeline — full flow with edit step, confirm/save, activity logging, fuzzy dedup
+- [x] #19 Person Profile as relationship center — AI summary, last contact, next action, tasks, opportunities, drafts, notes, warm paths, reconnect warning
+- [x] #20 Deploy profile — DEPLOY.md, README.md, /api/health, pnpm worker/worker:once/worker:dev, pnpm db:push
+- [x] Updated test suite with v8 fuzzy matching tests (110 tests passing: 21 fuzzyMatch, 23 llmHelpers, 65 routers, 1 auth)
