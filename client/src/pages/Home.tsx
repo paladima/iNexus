@@ -20,7 +20,8 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: stats, isLoading } = trpc.dashboard.stats.useQuery();
-  const { data: brief } = trpc.dashboard.dailyBrief.useQuery();
+  const { data: briefData } = trpc.dashboard.dailyBrief.useQuery();
+  const brief = briefData?.status === "ready" ? briefData.brief : null;
   const generateBrief = trpc.dashboard.generateBrief.useMutation({
     onSuccess: () => {
       // #13: Brief generates in background; poll for result

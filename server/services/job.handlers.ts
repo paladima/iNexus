@@ -1,18 +1,20 @@
 /**
  * Job Handlers — register all background job types with the job service.
- * Uses service layer for business logic. Import once at server startup.
+ * Uses service layer and providers for all business logic.
+ * Import once at server startup.
  */
 import { registerJobHandler } from "./job.service";
-import { callLLM } from "./llm.service";
-import {
-  dailyBriefSchema,
-  personSummarySchema,
-  opportunityDetectionSchema,
-  voiceIntentSchema,
-} from "../llmHelpers";
 import * as repo from "../repositories";
 import * as oppService from "./opportunities.service";
 import * as voiceService from "./voice.service";
+import { getProviderWithFallback } from "../providers/registry";
+import type {
+  DailyBriefProvider,
+  OpportunityProvider,
+  VoiceParserProvider,
+} from "../providers/types";
+import { callLLM } from "./llm.service";
+import { personSummarySchema } from "../llmHelpers";
 
 /**
  * Call this once at server startup to register all handlers.
@@ -21,50 +23,40 @@ export function registerAllHandlers() {
   console.log("[Jobs] All job handlers registered");
 }
 
-// ─── Generate Daily Brief ───────────────────────────────────────
+// ─── Generate Daily Brief (#11) ────────────────────────────────
 registerJobHandler("generate_brief", async (_jobId, userId, _payload) => {
+  const briefProvider = getProviderWithFallback("dailyBrief") as DailyBriefProvider | undefined;
+
   const goals = await repo.getUserGoals(userId);
   const opps = await repo.getOpportunities(userId, { status: "open", limit: 10 });
   const taskData = await repo.getTasks(userId, { status: "open", limit: 10 });
   const stale = await repo.getPeopleNeedingReconnect(userId, 90);
+  const drafts = await repo.getDrafts(userId, { status: "pending_review", limit: 100 });
 
-  const { data: brief } = await callLLM({
-    promptModule: "daily_brief",
-    params: {
-      messages: [
-        {
-          role: "system",
-          content: `You are a daily brief generator for a networking app. Return JSON: { greeting, summary, items: [{ title, description, priority, type }], reconnectSuggestions: [{ personName, reason }] }`,
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            goals: goals ?? {},
-            opportunities: opps.items.slice(0, 5),
-            tasks: taskData.items.slice(0, 5),
-            staleContacts: stale
-              .slice(0, 5)
-              .map((p) => ({
-                name: p.fullName,
-                lastInteraction: p.lastInteractionAt,
-              })),
-          }),
-        },
-      ],
-      response_format: { type: "json_object" as const },
-    },
-    schema: dailyBriefSchema,
-    fallback: {
+  const context = {
+    goals: goals ?? {},
+    opportunities: opps.items.slice(0, 5).map((o: any) => ({ title: o.title, type: o.opportunityType })),
+    tasks: taskData.items.slice(0, 5).map((t: any) => ({ title: t.title, priority: t.priority })),
+    pendingDrafts: Array.isArray(drafts) ? drafts.length : 0,
+    staleContacts: stale.slice(0, 5).map((p) => ({ name: p.fullName, lastInteraction: p.lastInteractionAt })),
+  };
+
+  let brief: Record<string, unknown>;
+
+  if (briefProvider) {
+    brief = await briefProvider.generateBrief(context) as unknown as Record<string, unknown>;
+  } else {
+    // Fallback
+    brief = {
       greeting: "Good morning!",
       summary: "Here's your daily brief.",
       items: [],
-    },
-    userId,
-  });
+    };
+  }
 
   const today = new Date().toISOString().split("T")[0];
-  await repo.saveDailyBrief(userId, today, brief as Record<string, unknown>);
-  return brief as Record<string, unknown>;
+  await repo.saveDailyBrief(userId, today, brief);
+  return brief;
 });
 
 // ─── Generate Person Summary ────────────────────────────────────
@@ -73,7 +65,7 @@ registerJobHandler("generate_summary", async (_jobId, userId, payload) => {
   const person = await repo.getPersonById(userId, personId);
   if (!person) throw new Error("Person not found");
 
-  const { data: summary } = await callLLM({
+  const { data: summary } = await callLLM<Record<string, unknown>>({
     promptModule: "person_summary",
     params: {
       messages: [
@@ -102,56 +94,47 @@ registerJobHandler("generate_summary", async (_jobId, userId, payload) => {
   return summary as Record<string, unknown>;
 });
 
-// ─── Scan Opportunities (with deduplication via service) ────────
+// ─── Scan Opportunities ─────────────────────────────────────────
 registerJobHandler("scan_opportunities", async (_jobId, userId, _payload) => {
+  const oppProvider = getProviderWithFallback("opportunity") as OpportunityProvider | undefined;
   const goals = await repo.getUserGoals(userId);
   const peopleData = await repo.getPeople(userId, { limit: 50 });
 
-  const { data: opportunities } = await callLLM({
-    promptModule: "opportunity_scan",
-    params: {
-      messages: [
-        {
-          role: "system",
-          content: `Detect networking opportunities from the user's contacts. Return JSON: { opportunities: [{ title, opportunityType, signalSummary, whyItMatters, recommendedAction, score, personIndex }] }`,
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            goals: goals ?? {},
-            people: peopleData.items.map((p, i) => ({
-              index: i,
-              name: p.fullName,
-              title: p.title,
-              company: p.company,
-            })),
-          }),
-        },
-      ],
-      response_format: { type: "json_object" as const },
-    },
-    schema: opportunityDetectionSchema,
-    fallback: { opportunities: [] },
-    userId,
-  });
+  const people = peopleData.items.map((p, i) => ({
+    index: i,
+    id: p.id,
+    name: p.fullName,
+    title: p.title,
+    company: p.company,
+  }));
+
+  let opportunities: Array<Record<string, unknown>> = [];
+
+  if (oppProvider) {
+    const detected = await oppProvider.detectOpportunities(
+      people as Array<Record<string, unknown>>,
+      goals ?? undefined
+    );
+    opportunities = detected.map((o, i) => ({
+      ...o,
+      personIndex: i,
+    }));
+  }
 
   let created = 0;
   let duplicates = 0;
-  for (const opp of (opportunities as any).opportunities ?? []) {
-    const personIndex = opp.personIndex;
+  for (const opp of opportunities) {
+    const personIndex = opp.personIndex as number | undefined;
     const person =
-      typeof personIndex === "number"
-        ? peopleData.items[personIndex]
-        : undefined;
+      typeof personIndex === "number" ? peopleData.items[personIndex] : undefined;
 
-    // Use service-level dedup
     const result = await oppService.createOpportunityIfUnique(userId, {
-      title: opp.title,
-      opportunityType: opp.opportunityType ?? "general",
-      signalSummary: opp.signalSummary ?? "",
+      title: String(opp.title ?? ""),
+      opportunityType: String(opp.opportunityType ?? "general"),
+      signalSummary: String(opp.signalSummary ?? ""),
       personId: person?.id,
-      whyItMatters: opp.whyItMatters,
-      recommendedAction: opp.recommendedAction,
+      whyItMatters: opp.whyItMatters as string | undefined,
+      recommendedAction: opp.recommendedAction as string | undefined,
       score: String(opp.score ?? "0.5"),
     });
 
@@ -178,25 +161,14 @@ registerJobHandler("voice_transcribe", async (_jobId, _userId, payload) => {
 // ─── Voice Parse ────────────────────────────────────────────────
 registerJobHandler("voice_parse", async (_jobId, userId, payload) => {
   const transcript = payload.transcript as string;
+  const voiceProvider = getProviderWithFallback("voiceParser") as VoiceParserProvider | undefined;
 
-  const { data: parsed } = await callLLM({
-    promptModule: "voice_parse",
-    params: {
-      messages: [
-        {
-          role: "system",
-          content: `Parse this voice transcript into structured data. Return JSON: { people: [{ name, role, company, action }], tasks: [{ title, priority, dueDate }], notes: [{ personName, content }], reminders: [{ title, datetime }] }`,
-        },
-        { role: "user", content: transcript },
-      ],
-      response_format: { type: "json_object" as const },
-    },
-    schema: voiceIntentSchema,
-    fallback: { people: [], tasks: [], notes: [], reminders: [] },
-    userId,
-  });
+  if (voiceProvider) {
+    const parsed = await voiceProvider.parseTranscript(transcript);
+    return parsed as unknown as Record<string, unknown>;
+  }
 
-  return parsed as Record<string, unknown>;
+  return { people: [], tasks: [], notes: [], reminders: [] };
 });
 
 // ─── Batch Outreach ─────────────────────────────────────────────
@@ -221,7 +193,7 @@ registerJobHandler("batch_outreach", async (_jobId, userId, payload) => {
 
   let created = 0;
   for (const person of people) {
-    const { data: draft } = await callLLM({
+    const { data: draft } = await callLLM<Record<string, unknown>>({
       promptModule: "batch_outreach",
       params: {
         messages: [
@@ -232,11 +204,7 @@ registerJobHandler("batch_outreach", async (_jobId, userId, payload) => {
           {
             role: "user",
             content: JSON.stringify({
-              person: {
-                name: person.fullName,
-                title: person.title,
-                company: person.company,
-              },
+              person: { name: person.fullName, title: person.title, company: person.company },
               goals: goals ?? {},
             }),
           },

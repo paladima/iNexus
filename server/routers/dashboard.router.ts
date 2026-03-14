@@ -1,23 +1,29 @@
 /**
- * Dashboard & Daily Brief Router (#3)
+ * Dashboard & Daily Brief Router (#12)
+ * Thin layer — delegates to dashboard.service.ts
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as repo from "../repositories";
-import { enqueueJob, pollJobStatus } from "../services/job.service";
+import * as dashboardService from "../services/dashboard.service";
 
 export const dashboardRouter = router({
   stats: protectedProcedure.query(async ({ ctx }) => {
-    return repo.getDashboardStats(ctx.user.id);
+    return dashboardService.getDashboardStats(ctx.user.id);
   }),
+
   dailyBrief: protectedProcedure
     .input(z.object({ date: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const date = input?.date ?? new Date().toISOString().split("T")[0];
-      return repo.getDailyBrief(ctx.user.id, date);
+      return dashboardService.getDailyBrief(ctx.user.id, input?.date);
     }),
+
   generateBrief: protectedProcedure.mutation(async ({ ctx }) => {
-    const jobId = await enqueueJob(ctx.user.id, "generate_brief");
-    return { status: "generating", jobId, message: "Daily brief is being generated. Refresh in a few seconds." };
+    return dashboardService.generateBrief(ctx.user.id);
   }),
+
+  briefStatus: protectedProcedure
+    .input(z.object({ jobId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return dashboardService.getBriefJobStatus(ctx.user.id, input.jobId);
+    }),
 });

@@ -163,3 +163,26 @@
 - [x] #18 Enhance Activity timeline (saved people, generated drafts, voice captures, tasks, opportunities)
 - [x] #19 Clean production repository (remove dist/, .webdev/, debug artifacts)
 - [x] #20 Verify deploy profile (.env.example, migration script, seed script, worker start, health endpoint, README)
+
+## MVP Hardening v4 (20 items)
+- [x] #1 Full discovery through DiscoveryProvider (not half-provider, half-direct LLM)
+- [x] #2 Fix DiscoveryProvider interface mismatch (search method unused in service)
+- [x] #3 Single discovery architecture: all through provider or all service orchestration
+- [x] #4 Remove inline execution from enqueueJob — DB-only enqueue, worker polls
+- [x] #5 DB-based job cancellation (not in-memory Set)
+- [x] #6 Add missing job fields: runAfter, dedupeKey, attemptStartedAt, workerId, entityType/entityId
+- [x] #7 Job idempotency/deduplication via dedupeKey (userId + jobType + entityId or payload hash)
+- [x] #8 Consistent job repo usage (no raw db access in job.service.ts)
+- [x] #9 Complete barrel exports for routers/index.ts (all routers exported)
+- [x] #10 Use getProviderWithFallback() in services instead of getProvider()
+- [x] #11 Daily Brief full job-status UX (queued/running/completed/failed polling)
+- [x] #12 Dashboard service layer (dashboard.service.ts for stats, brief, fallback)
+- [x] #13 Bulk flow optimization (batch inserts, reduce DB roundtrips)
+- [x] #14 Deduplication in bulkSavePeople (match by userId+fullName+company)
+- [x] #15 Ownership checks in all bulk workflows (bulkAddToList, bulkCreateTasks, batch drafts)
+- [x] #16 End-to-end discover→save→list→draft→task as single guided flow
+- [x] #17 Command bar as real orchestration entry point (uses same services)
+- [x] #18 Voice as first-class workflow (upload→transcribe→parse→confirm→edit→save→activity)
+- [x] #19 Clean delivery archive and repo hygiene (no .manus/db, dist, debug artifacts)
+- [x] #20 MVP deployment profile as separate deliverable (env, README, migrations, seed, worker, health)
+- [x] Updated test suite with provider registry mocks (86 tests passing across 3 files)

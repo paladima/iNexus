@@ -190,6 +190,59 @@ vi.mock("./providers/init", () => ({
   initializeProviders: vi.fn(),
 }));
 
+// Mock providers registry — return mock providers for all types
+vi.mock("./providers/registry", () => {
+  const mockDiscoveryProvider = {
+    decomposeIntent: vi.fn().mockResolvedValue({
+      intent: { topic: "AI founders", role: "founder", industry: "AI" },
+      queryVariants: ["AI founders", "artificial intelligence startup founders"],
+    }),
+    search: vi.fn().mockResolvedValue([
+      { fullName: "Alice", title: "CEO", company: "TechCo", relevanceScore: 0.9, whyRelevant: "AI expert" },
+    ]),
+  };
+  const mockDraftProvider = {
+    generateDraft: vi.fn().mockResolvedValue({ subject: "Introduction", body: "I'd like to introduce...", tone: "professional" }),
+    generateIntroDraft: vi.fn().mockResolvedValue({ subject: "Intro", body: "I'd like to connect you two." }),
+  };
+  const mockVoiceParserProvider = {
+    parseTranscript: vi.fn().mockResolvedValue({
+      people: [{ name: "John", context: "met at conference" }],
+      tasks: [{ title: "Follow up", dueHint: "tomorrow" }],
+      notes: [],
+      reminders: [],
+    }),
+  };
+  const mockOpportunityProvider = {
+    detectOpportunities: vi.fn().mockResolvedValue([]),
+  };
+  const mockRelationshipProvider = {
+    suggestRelationships: vi.fn().mockResolvedValue([]),
+  };
+  const mockDailyBriefProvider = {
+    generateBrief: vi.fn().mockResolvedValue({ greeting: "Hello", items: [], summary: "All good" }),
+  };
+
+  const providers: Record<string, any> = {
+    discovery: mockDiscoveryProvider,
+    draft: mockDraftProvider,
+    voiceParser: mockVoiceParserProvider,
+    opportunity: mockOpportunityProvider,
+    relationship: mockRelationshipProvider,
+    dailyBrief: mockDailyBriefProvider,
+  };
+
+  return {
+    registerProvider: vi.fn(),
+    getProvider: vi.fn().mockImplementation((key: string) => providers[key]),
+    getProviderWithFallback: vi.fn().mockImplementation((key: string) => providers[key]),
+    hasProvider: vi.fn().mockReturnValue(true),
+    getProviderStatus: vi.fn().mockReturnValue({}),
+    getFeatureFlags: vi.fn().mockReturnValue({}),
+    setFeatureFlags: vi.fn(),
+  };
+});
+
 // ─── Auth ─────────────────────────────────────────────────────
 
 describe("auth.me", () => {
@@ -246,20 +299,21 @@ describe("dashboard", () => {
     expect(result.openTasks).toBe(5);
   });
 
-  it("dailyBrief returns brief", async () => {
+  it("dailyBrief returns status", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.dashboard.dailyBrief();
-    expect(result).toBeNull(); // No brief generated yet
+    expect(result).toBeDefined();
+    expect(result.status).toBe("empty"); // No brief generated yet
   });
 
-  it("generateBrief returns generating status", async () => {
+  it("generateBrief returns queued status", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.dashboard.generateBrief();
     expect(result).toBeDefined();
-    expect(result.status).toBe("generating");
-    expect(result.message).toContain("being generated");
+    expect(result.status).toBe("queued");
+    expect(result.message).toContain("started");
   });
 });
 

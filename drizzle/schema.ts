@@ -307,6 +307,12 @@ export const jobs = mysqlTable("jobs", {
   payload: json("payload").$type<Record<string, unknown>>().default({}),
   result: json("result").$type<Record<string, unknown>>(),
   error: text("error"),
+  dedupeKey: varchar("dedupeKey", { length: 255 }),
+  workerId: varchar("workerId", { length: 64 }),
+  entityType: varchar("entityType", { length: 64 }),
+  entityId: int("entityId"),
+  runAfter: timestamp("runAfter"),
+  attemptStartedAt: timestamp("attemptStartedAt"),
   startedAt: timestamp("startedAt"),
   finishedAt: timestamp("finishedAt"),
   cancelledAt: timestamp("cancelledAt"),
@@ -315,6 +321,8 @@ export const jobs = mysqlTable("jobs", {
   index("idx_jobs_userId_type").on(table.userId, table.jobType),
   index("idx_jobs_status").on(table.status),
   index("idx_jobs_priority").on(table.priority),
+  index("idx_jobs_dedupeKey").on(table.dedupeKey),
+  index("idx_jobs_runAfter").on(table.runAfter),
 ]);
 
 export type Job = typeof jobs.$inferSelect;

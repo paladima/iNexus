@@ -1,5 +1,5 @@
 /**
- * LLM-backed provider implementations (#7)
+ * LLM-backed provider implementations.
  * These use the unified callLLM service for all AI operations.
  */
 
@@ -26,6 +26,34 @@ import type {
   DailyBriefData,
 } from "./types";
 
+// ─── Scoring weights for discovery ──────────────────────────────
+const SCORING_WEIGHTS: Record<string, number> = {
+  roleMatch: 0.25,
+  industryMatch: 0.20,
+  geoMatch: 0.15,
+  seniorityMatch: 0.15,
+  goalAlignment: 0.15,
+  signalStrength: 0.10,
+};
+
+function computeWeightedScore(scoring: Record<string, number>): number {
+  let total = 0;
+  for (const [key, weight] of Object.entries(SCORING_WEIGHTS)) {
+    total += (scoring[key] ?? 0) * weight;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+function deduplicateResults(results: DiscoveryResult[]): DiscoveryResult[] {
+  const seen = new Set<string>();
+  return results.filter((r) => {
+    const name = (r.fullName ?? "").toLowerCase().trim();
+    if (seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+
 // ─── LLM Discovery Provider ──────────────────────────────────────
 export class LLMDiscoveryProvider implements DiscoveryProvider {
   async decomposeIntent(query: string, userGoals?: Record<string, unknown>) {
@@ -35,7 +63,7 @@ export class LLMDiscoveryProvider implements DiscoveryProvider {
         messages: [
           {
             role: "system",
-            content: `Decompose this networking search query into structured intent. Return JSON: { "intent": { "topic": "...", "role": "...", "geo": "...", "speaker": false, "negatives": [] }, "queryVariants": ["variant1", "variant2", "variant3"] }`,
+            content: `Decompose this networking search query into structured intent. Return JSON: { "intent": { "topic": "...", "role": "...", "geo": "...", "industry": "...", "speaker": false, "negatives": [] }, "queryVariants": ["variant1", "variant2", "variant3"] }`,
           },
           {
             role: "user",
@@ -49,25 +77,49 @@ export class LLMDiscoveryProvider implements DiscoveryProvider {
     return data as { intent: DiscoveryIntent; queryVariants: string[] };
   }
 
-  async search(query: string, intent: DiscoveryIntent, queryVariants: string[]): Promise<DiscoveryResult[]> {
+  async search(
+    query: string,
+    intent: DiscoveryIntent,
+    queryVariants: string[],
+    filters?: Record<string, unknown>,
+    userGoals?: Record<string, unknown>
+  ): Promise<DiscoveryResult[]> {
+    const negatives = intent.negatives ?? [];
     const { data } = await callLLM<{ results: DiscoveryResult[] }>({
       promptModule: "discovery_search",
       params: {
         messages: [
           {
             role: "system",
-            content: `Find relevant people for networking based on this search. Return JSON: { "results": [{ "fullName": "...", "title": "...", "company": "...", "location": "...", "relevanceScore": 0.85, "matchReasons": ["reason1"] }] }`,
+            content: `You are a networking discovery engine with role-aware ranking. Generate 8-12 relevant people profiles based on the search intent. For each person, provide scoring on 6 axes (0-1 each):
+- roleMatch: how well their title/role matches the query
+- industryMatch: alignment with target industry
+- geoMatch: geographic relevance
+- seniorityMatch: appropriate seniority level
+- goalAlignment: relevance to user's networking goals
+- signalStrength: strength of the networking signal
+
+Return JSON: { "results": [{ "fullName": "...", "title": "...", "company": "...", "location": "...", "sourceType": "web", "linkedinUrl": "", "scoring": { "roleMatch": 0.9, "industryMatch": 0.8, "geoMatch": 0.7, "seniorityMatch": 0.85, "goalAlignment": 0.9, "signalStrength": 0.75 }, "matchReasons": ["reason1", "reason2"], "whyRelevant": "..." }] }. Exclude anyone matching these negatives: ${JSON.stringify(negatives)}`,
           },
           {
             role: "user",
-            content: JSON.stringify({ query, intent, queryVariants }),
+            content: `Intent: ${JSON.stringify(intent)}\nQuery variants: ${JSON.stringify(queryVariants)}\nFilters: ${JSON.stringify(filters ?? {})}\nUser goals: ${JSON.stringify(userGoals ?? {})}`,
           },
         ],
         response_format: { type: "json_object" as const },
       },
       fallback: { results: [] },
     });
-    return (data as any).results ?? [];
+
+    // Score, deduplicate, sort
+    let results = ((data as any).results ?? []) as DiscoveryResult[];
+    results = results.map((r) => ({
+      ...r,
+      relevanceScore: computeWeightedScore((r.scoring ?? {}) as Record<string, number>),
+    }));
+    results = deduplicateResults(results);
+    results.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    return results;
   }
 }
 

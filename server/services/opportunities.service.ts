@@ -1,11 +1,11 @@
 /**
- * Opportunities Service (#2, #16, #17)
- * Business logic: CRUD, draft/task generation, intro, dedup, enhanced signals
+ * Opportunities Service (#10, #16, #17)
+ * Provider-first: uses OpportunityProvider and DraftProvider via getProviderWithFallback.
+ * No direct invokeLLM calls — all AI goes through providers.
  */
-import { invokeLLM } from "../_core/llm";
 import * as repo from "../repositories";
-import { getProvider } from "../providers/registry";
-import { parseLLMWithSchema, draftSchema } from "../llmHelpers";
+import { getProviderWithFallback } from "../providers/registry";
+import type { DraftProvider, OpportunityProvider } from "../providers/types";
 
 // ─── Opportunity Deduplication (#17) ─────────────────────────
 export function computeOpportunityFingerprint(
@@ -66,7 +66,7 @@ export async function createOpportunityIfUnique(
   return { id, duplicate: false };
 }
 
-// ─── Generate Draft from Opportunity ─────────────────────────
+// ─── Generate Draft from Opportunity (provider-first) ───────
 export async function generateDraftFromOpportunity(
   userId: number,
   opportunityId: number,
@@ -79,31 +79,25 @@ export async function generateDraftFromOpportunity(
   if (opp.personId) person = await repo.getPersonById(userId, opp.personId);
   const goals = await repo.getUserGoals(userId);
 
-  const response = await invokeLLM({
-    messages: [
-      {
-        role: "system",
-        content: `You are a professional networking message writer. Generate a message based on a detected opportunity. Tone: ${tone}. Return JSON: { "subject": "...", "body": "..." }`,
-      },
-      {
-        role: "user",
-        content: `Opportunity: ${JSON.stringify(opp)}\nPerson: ${JSON.stringify(person)}\nUser goals: ${JSON.stringify(goals)}`,
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
+  const draftProvider = getProviderWithFallback("draft") as DraftProvider | undefined;
+  if (!draftProvider) throw new Error("DraftProvider not registered");
 
-  const parsed = parseLLMWithSchema(response, draftSchema, "opportunities.generateDraft", {
-    subject: "",
-    body: "",
+  const result = await draftProvider.generateDraft({
+    personName: person?.fullName ?? "Unknown",
+    personTitle: person?.title ?? undefined,
+    personCompany: person?.company ?? undefined,
+    context: `Opportunity: ${opp.title}. Signal: ${opp.signalSummary}`,
+    userGoals: goals ?? undefined,
+    tone,
+    draftType: "opportunity_outreach",
   });
 
   const draftId = await repo.createDraft(userId, {
     personId: opp.personId ?? undefined,
     draftType: "opportunity_outreach",
     tone,
-    subject: parsed.subject,
-    body: parsed.body,
+    subject: result.subject,
+    body: result.body,
     metadataJson: { opportunityId },
   });
 
@@ -114,7 +108,7 @@ export async function generateDraftFromOpportunity(
     entityId: draftId ?? undefined,
   });
 
-  return { id: draftId, ...parsed };
+  return { id: draftId, ...result };
 }
 
 // ─── Create Task from Opportunity ────────────────────────────
@@ -148,11 +142,11 @@ export async function createTaskFromOpportunity(
   return { id: taskId };
 }
 
-// ─── Generate Intro from Opportunity ─────────────────────────
+// ─── Generate Intro from Opportunity (provider-first) ───────
 export async function generateIntroFromOpportunity(
   userId: number,
   opportunityId: number,
-  tone: string = "warm"
+  _tone: string = "warm"
 ) {
   const opp = await repo.getOpportunityById(userId, opportunityId);
   if (!opp) throw new Error("Opportunity not found");
@@ -165,30 +159,20 @@ export async function generateIntroFromOpportunity(
   if (personAId) personA = await repo.getPersonById(userId, personAId);
   if (personBId) personB = await repo.getPersonById(userId, personBId);
 
-  const response = await invokeLLM({
-    messages: [
-      {
-        role: "system",
-        content: `You are a professional networking assistant. Write an introduction message connecting two people. Tone: ${tone}. Return JSON: { "subject": "...", "body": "..." }`,
-      },
-      {
-        role: "user",
-        content: `Person A: ${JSON.stringify(personA)}\nPerson B: ${JSON.stringify(personB)}\nReason for intro: ${opp.signalSummary}`,
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
+  const draftProvider = getProviderWithFallback("draft") as DraftProvider | undefined;
+  if (!draftProvider) throw new Error("DraftProvider not registered");
 
-  const parsed = parseLLMWithSchema(response, draftSchema, "opportunities.generateIntro", {
-    subject: "",
-    body: "",
-  });
+  const result = await draftProvider.generateIntroDraft(
+    personA?.fullName ?? "Person A",
+    personB?.fullName ?? "Person B",
+    opp.signalSummary ?? "Mutual interest"
+  );
 
   const draftId = await repo.createDraft(userId, {
     draftType: "intro_message",
-    tone,
-    subject: parsed.subject,
-    body: parsed.body,
+    tone: _tone,
+    subject: result.subject,
+    body: result.body,
     metadataJson: { opportunityId, personAId, personBId },
   });
 
@@ -199,12 +183,12 @@ export async function generateIntroFromOpportunity(
     entityId: draftId ?? undefined,
   });
 
-  return { id: draftId, ...parsed };
+  return { id: draftId, ...result };
 }
 
 // ─── Enhanced Opportunity Detection (#16) ────────────────────
 export async function detectOpportunitiesForUser(userId: number) {
-  const provider = getProvider("opportunity");
+  const provider = getProviderWithFallback("opportunity") as OpportunityProvider | undefined;
   if (!provider) return [];
 
   const { items: people } = await repo.getPeople(userId, { limit: 50 });

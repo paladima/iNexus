@@ -1,5 +1,5 @@
 /**
- * #16: Provider interfaces for pluggable architecture.
+ * Provider interfaces for pluggable architecture.
  * These interfaces define the contracts for each AI-powered module.
  */
 
@@ -8,8 +8,10 @@ export interface DiscoveryIntent {
   topic: string;
   role?: string;
   geo?: string;
+  industry?: string;
   speaker?: boolean;
   negatives?: string[];
+  queryVariants?: string[];
 }
 
 export interface DiscoveryResult {
@@ -19,18 +21,30 @@ export interface DiscoveryResult {
   location?: string;
   linkedinUrl?: string;
   websiteUrl?: string;
+  sourceType?: string;
   relevanceScore?: number;
   scoring?: Record<string, number>;
   matchReasons?: string[];
+  whyRelevant?: string;
   [key: string]: unknown;
 }
 
+/**
+ * DiscoveryProvider — full pipeline: decompose → search → score.
+ * Services call provider methods; provider owns the LLM interaction.
+ */
 export interface DiscoveryProvider {
   decomposeIntent(query: string, userGoals?: Record<string, unknown>): Promise<{
     intent: DiscoveryIntent;
     queryVariants: string[];
   }>;
-  search(query: string, intent: DiscoveryIntent, queryVariants: string[]): Promise<DiscoveryResult[]>;
+  search(
+    query: string,
+    intent: DiscoveryIntent,
+    queryVariants: string[],
+    filters?: Record<string, unknown>,
+    userGoals?: Record<string, unknown>
+  ): Promise<DiscoveryResult[]>;
 }
 
 // ─── Draft Provider ────────────────────────────────────────────

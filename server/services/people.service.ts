@@ -1,10 +1,11 @@
 /**
- * People Service (#2)
- * Business logic extracted from people.router.ts
+ * People Service (#10)
+ * Business logic for people: summary, profile, save.
+ * Uses callLLM from llm.service (no direct invokeLLM).
  */
-import { invokeLLM } from "../_core/llm";
 import * as repo from "../repositories";
-import { parseLLMWithSchema, personSummarySchema } from "../llmHelpers";
+import { callLLM } from "./llm.service";
+import { personSummarySchema } from "../llmHelpers";
 
 export async function generatePersonSummary(userId: number, personId: number) {
   const person = await repo.getPersonById(userId, personId);
@@ -14,27 +15,33 @@ export async function generatePersonSummary(userId: number, personId: number) {
   const ints = await repo.getInteractions(userId, personId, 10);
   const goals = await repo.getUserGoals(userId);
 
-  const response = await invokeLLM({
-    messages: [
-      {
-        role: "system",
-        content: `Generate a concise networking summary for this person. Explain why they matter to the user's goals. Return JSON: { "summary": "...", "keyPoints": ["..."], "connectionStrength": "strong|moderate|new" }`,
-      },
-      {
-        role: "user",
-        content: `Person: ${JSON.stringify(person)}\nNotes: ${JSON.stringify(notes)}\nInteractions: ${JSON.stringify(ints)}\nUser goals: ${JSON.stringify(goals)}`,
-      },
-    ],
-    response_format: { type: "json_object" },
+  const { data } = await callLLM<Record<string, unknown>>({
+    promptModule: "person_summary",
+    params: {
+      messages: [
+        {
+          role: "system",
+          content: `Generate a concise networking summary for this person. Explain why they matter to the user's goals. Return JSON: { "summary": "...", "keyPoints": ["..."], "connectionStrength": "strong|moderate|new" }`,
+        },
+        {
+          role: "user",
+          content: `Person: ${JSON.stringify(person)}\nNotes: ${JSON.stringify(notes)}\nInteractions: ${JSON.stringify(ints)}\nUser goals: ${JSON.stringify(goals)}`,
+        },
+      ],
+      response_format: { type: "json_object" as const },
+    },
+    schema: personSummarySchema,
+    fallback: {
+      summary: `${person.fullName} — ${person.title ?? "Professional"} at ${person.company ?? "Unknown"}`,
+      keyTopics: [],
+      relevanceScore: 0,
+    },
+    userId,
+    entityType: "person",
+    entityId: personId,
   });
 
-  const parsed = parseLLMWithSchema(
-    response,
-    personSummarySchema,
-    "people.generateSummary",
-    { summary: "", keyTopics: [], relevanceScore: 0 }
-  );
-
+  const parsed = data as { summary: string; keyTopics?: string[]; relevanceScore?: number };
   await repo.updatePerson(userId, personId, { aiSummary: parsed.summary });
   return parsed;
 }
@@ -94,6 +101,22 @@ export async function savePerson(
     tags?: string[];
   }
 ) {
+  // Dedup check: same name + company
+  if (data.fullName) {
+    const { items: existing } = await repo.getPeople(userId, { search: data.fullName, limit: 3 });
+    const duplicate = existing.some(
+      (e) =>
+        e.fullName.toLowerCase() === data.fullName.toLowerCase() &&
+        (!data.company || (e.company ?? "").toLowerCase() === data.company.toLowerCase())
+    );
+    if (duplicate) {
+      const match = existing.find(
+        (e) => e.fullName.toLowerCase() === data.fullName.toLowerCase()
+      );
+      return { id: match?.id ?? null, duplicate: true };
+    }
+  }
+
   const id = await repo.createPerson(userId, data);
   await repo.logActivity(userId, {
     activityType: "person_added",
@@ -101,5 +124,5 @@ export async function savePerson(
     entityType: "person",
     entityId: id ?? undefined,
   });
-  return { id };
+  return { id, duplicate: false };
 }

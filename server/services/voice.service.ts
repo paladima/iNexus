@@ -1,22 +1,24 @@
 /**
- * Voice Service (#2)
- * Business logic extracted from voice.router.ts
+ * Voice Service (#18)
+ * Full voice workflow: upload → transcribe → parse → confirm → edit → save.
+ * Provider-first: uses VoiceParserProvider, no direct invokeLLM calls.
  */
-import { invokeLLM } from "../_core/llm";
 import { transcribeAudio } from "../_core/voiceTranscription";
 import { storagePut } from "../storage";
 import * as repo from "../repositories";
-import { getProvider } from "../providers/registry";
-import { parseLLMWithSchema, voiceIntentSchema } from "../llmHelpers";
+import { getProviderWithFallback } from "../providers/registry";
+import type { VoiceParserProvider, VoiceParseResult } from "../providers/types";
 
+// ─── Upload Audio ───────────────────────────────────────────────
 export async function uploadAudio(userId: number, audioBase64: string, mimeType: string) {
   const buffer = Buffer.from(audioBase64, "base64");
-  const ext = mimeType.includes("webm") ? "webm" : "mp3";
-  const key = `voice/${userId}/${Date.now()}.${ext}`;
+  const ext = mimeType.includes("webm") ? "webm" : mimeType.includes("wav") ? "wav" : "mp3";
+  const key = `voice/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const { url } = await storagePut(key, buffer, mimeType);
-  return { url };
+  return { url, key };
 }
 
+// ─── Transcribe ─────────────────────────────────────────────────
 export async function transcribeAudioFile(audioUrl: string, language?: string) {
   const result = await transcribeAudio({ audioUrl, language });
   if ("error" in result) {
@@ -25,63 +27,49 @@ export async function transcribeAudioFile(audioUrl: string, language?: string) {
   return result;
 }
 
-export async function parseVoiceIntent(userId: number, transcript: string) {
-  // Try provider first
-  const voiceProvider = getProvider("voiceParser");
-  if (voiceProvider) {
-    try {
-      const parsed = await voiceProvider.parseTranscript(transcript);
-      const captureId = await repo.createVoiceCapture(userId, {
-        transcript,
-        parsedJson: parsed as unknown as Record<string, unknown>,
-        status: "parsed",
-      });
-      await repo.logActivity(userId, {
-        activityType: "voice_capture",
-        title: "Voice note captured",
-        entityType: "voice_capture",
-        entityId: captureId ?? undefined,
-      });
-      return { id: captureId, ...parsed };
-    } catch {
-      // Fall through to direct LLM
-    }
-  }
+// ─── Parse Transcript (provider-first) ──────────────────────────
+export async function parseVoiceIntent(userId: number, transcript: string): Promise<{ id: number | null } & VoiceParseResult> {
+  const provider = getProviderWithFallback("voiceParser") as VoiceParserProvider | undefined;
+  if (!provider) throw new Error("VoiceParserProvider not registered");
 
-  const response = await invokeLLM({
-    messages: [
-      {
-        role: "system",
-        content: `Parse this voice transcript into structured networking actions. Return JSON: { "people": [{ "name": "...", "context": "..." }], "tasks": [{ "title": "...", "dueHint": "..." }], "notes": [{ "personName": "...", "content": "..." }], "reminders": [{ "text": "...", "when": "..." }] }`,
-      },
-      { role: "user", content: transcript },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const parsed = parseLLMWithSchema(response, voiceIntentSchema, "voice.parseIntent", {
-    people: [],
-    tasks: [],
-    notes: [],
-    reminders: [],
-  });
+  const parsed = await provider.parseTranscript(transcript);
 
   const captureId = await repo.createVoiceCapture(userId, {
     transcript,
-    parsedJson: parsed,
+    parsedJson: parsed as unknown as Record<string, unknown>,
     status: "parsed",
   });
 
   await repo.logActivity(userId, {
     activityType: "voice_capture",
-    title: "Voice note captured",
+    title: "Voice note captured and parsed",
     entityType: "voice_capture",
     entityId: captureId ?? undefined,
+    metadataJson: {
+      peopleCount: parsed.people.length,
+      taskCount: parsed.tasks.length,
+      noteCount: parsed.notes.length,
+      reminderCount: parsed.reminders.length,
+    },
   });
 
   return { id: captureId, ...parsed };
 }
 
+// ─── Edit Parsed Actions (before confirm) ───────────────────────
+export async function editVoiceCapture(
+  userId: number,
+  captureId: number,
+  updatedParsed: VoiceParseResult
+) {
+  await repo.updateVoiceCapture(userId, captureId, {
+    parsedJson: updatedParsed as unknown as Record<string, unknown>,
+    status: "edited",
+  });
+  return { captureId, status: "edited" };
+}
+
+// ─── Confirm and Save Voice Actions ─────────────────────────────
 export async function confirmVoiceActions(
   userId: number,
   captureId: number,
@@ -89,51 +77,81 @@ export async function confirmVoiceActions(
   tasks: Array<{ title: string; priority: string; dueDate?: string; save: boolean }>,
   notes: Array<{ personName?: string; content: string; save: boolean }>
 ) {
-  const results = { savedPeople: 0, savedTasks: 0, savedNotes: 0 };
+  const results = { savedPeople: 0, savedTasks: 0, savedNotes: 0, errors: [] as string[] };
 
+  // Save people
   for (const p of people.filter((p) => p.save)) {
-    const names = p.name.split(" ");
-    await repo.createPerson(userId, {
-      fullName: p.name,
-      firstName: names[0],
-      lastName: names.slice(1).join(" "),
-      title: p.role,
-      company: p.company,
-      status: "saved",
-      sourceType: "voice",
-    });
-    results.savedPeople++;
-  }
+    try {
+      // Dedup check
+      const { items: existing } = await repo.getPeople(userId, { search: p.name, limit: 3 });
+      const duplicate = existing.some(
+        (e) => e.fullName.toLowerCase() === p.name.toLowerCase()
+      );
+      if (duplicate) continue;
 
-  for (const t of tasks.filter((t) => t.save)) {
-    const dueAt = t.dueDate ? new Date(t.dueDate) : undefined;
-    await repo.createTask(userId, {
-      title: t.title,
-      priority: t.priority,
-      dueAt,
-      source: "voice",
-    });
-    results.savedTasks++;
-  }
-
-  for (const n of notes.filter((n) => n.save)) {
-    if (n.personName) {
-      const { items } = await repo.getPeople(userId, { search: n.personName, limit: 1 });
-      if (items.length > 0) {
-        await repo.addPersonNote(userId, items[0].id, n.content, "voice", "ai");
-      }
+      const names = p.name.split(" ");
+      await repo.createPerson(userId, {
+        fullName: p.name,
+        firstName: names[0],
+        lastName: names.slice(1).join(" "),
+        title: p.role,
+        company: p.company,
+        status: "saved",
+        sourceType: "voice",
+      });
+      results.savedPeople++;
+    } catch (err) {
+      results.errors.push(`Failed to save person ${p.name}: ${(err as Error).message}`);
     }
-    results.savedNotes++;
   }
 
+  // Save tasks
+  for (const t of tasks.filter((t) => t.save)) {
+    try {
+      const dueAt = t.dueDate ? new Date(t.dueDate) : undefined;
+      await repo.createTask(userId, {
+        title: t.title,
+        priority: t.priority,
+        dueAt,
+        source: "voice",
+      });
+      results.savedTasks++;
+    } catch (err) {
+      results.errors.push(`Failed to save task ${t.title}: ${(err as Error).message}`);
+    }
+  }
+
+  // Save notes (linked to person if found)
+  for (const n of notes.filter((n) => n.save)) {
+    try {
+      if (n.personName) {
+        const { items } = await repo.getPeople(userId, { search: n.personName, limit: 1 });
+        if (items.length > 0) {
+          await repo.addPersonNote(userId, items[0].id, n.content, "voice", "ai");
+        }
+      }
+      results.savedNotes++;
+    } catch (err) {
+      results.errors.push(`Failed to save note: ${(err as Error).message}`);
+    }
+  }
+
+  // Update capture status
   await repo.updateVoiceCapture(userId, captureId, { status: "confirmed" });
 
+  // Activity log
   await repo.logActivity(userId, {
     activityType: "voice_actions_confirmed",
     title: `Confirmed voice actions: ${results.savedPeople} people, ${results.savedTasks} tasks, ${results.savedNotes} notes`,
     entityType: "voice_capture",
     entityId: captureId,
+    metadataJson: results,
   });
 
   return results;
+}
+
+// ─── Get Voice Capture by ID ────────────────────────────────────
+export async function getVoiceCapture(userId: number, captureId: number) {
+  return repo.getVoiceCaptureById(userId, captureId);
 }
