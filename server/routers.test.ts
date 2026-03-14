@@ -106,6 +106,22 @@ vi.mock("./db", () => ({
   createVoiceCapture: vi.fn().mockResolvedValue(1),
   getVoiceCaptures: vi.fn().mockResolvedValue([]),
   getActivityLog: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+  getRelationshipsForPerson: vi.fn().mockResolvedValue([
+    { id: 1, personAId: 1, personBId: 2, relationshipType: "colleague", confidence: "0.8", personA: { id: 1, fullName: "John" }, personB: { id: 2, fullName: "Jane" } }
+  ]),
+  createRelationship: vi.fn().mockResolvedValue(1),
+  findWarmPaths: vi.fn().mockResolvedValue([
+    { intermediary: { id: 3, fullName: "Bob" }, relationshipType: "colleague", confidence: "0.7" }
+  ]),
+  getListPeopleForBatch: vi.fn().mockResolvedValue([
+    { person: { id: 1, fullName: "John Doe", title: "CEO", company: "Acme" } },
+    { person: { id: 2, fullName: "Jane Smith", title: "CTO", company: "TechCo" } }
+  ]),
+  getOpportunityById: vi.fn().mockResolvedValue({
+    id: 1, title: "Intro Opportunity", opportunityType: "intro_suggestion",
+    signalSummary: "Both interested in AI",
+    metadataJson: { personAId: 1, personBId: 2 }
+  }),
 }));
 
 // Mock LLM
@@ -113,6 +129,13 @@ vi.mock("./_core/llm", () => ({
   invokeLLM: vi.fn().mockResolvedValue({
     choices: [{ message: { content: JSON.stringify({ greeting: "Hello", items: [], summary: "All good" }) } }],
   }),
+}));
+
+// Mock workers
+vi.mock("./workers", () => ({
+  runAllWorkers: vi.fn().mockResolvedValue(undefined),
+  generateDailyBriefForUser: vi.fn().mockResolvedValue(undefined),
+  scanOpportunitiesForUser: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock voice transcription
@@ -510,5 +533,109 @@ describe("settings", () => {
     const caller = appRouter.createCaller(ctx);
     const result = await caller.settings.update({ timezone: "America/New_York" });
     expect(result).toEqual({ success: true });
+  });
+});
+
+describe("relationships", () => {
+  it("forPerson returns relationships for a person", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.relationships.forPerson({ personId: 1 });
+    expect(result).toBeDefined();
+    expect(result.length).toBe(1);
+    expect(result[0].relationshipType).toBe("colleague");
+  });
+
+  it("create adds a new relationship", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.relationships.create({
+      personAId: 1,
+      personBId: 2,
+      relationshipType: "colleague",
+    });
+    expect(result).toBeDefined();
+    expect(result.id).toBe(1);
+  });
+
+  it("warmPaths returns warm introduction paths", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.relationships.warmPaths({ targetPersonId: 1 });
+    expect(result).toBeDefined();
+    expect(result.length).toBe(1);
+    expect(result[0].intermediary.fullName).toBe("Bob");
+  });
+
+  it("forPerson requires authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.relationships.forPerson({ personId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("lists.batchOutreach", () => {
+  it("generates drafts for all people in a list", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.lists.batchOutreach({ listId: 1 });
+    expect(result).toBeDefined();
+    expect(result.total).toBe(2);
+    expect(result.drafts.length).toBe(2);
+    expect(result.drafts[0].personName).toBe("John Doe");
+    expect(result.drafts[1].personName).toBe("Jane Smith");
+  });
+
+  it("batchOutreach requires authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.lists.batchOutreach({ listId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("opportunities.generateIntro", () => {
+  it("generates an intro draft from opportunity", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.opportunities.generateIntro({
+      opportunityId: 1,
+    });
+    expect(result).toBeDefined();
+    expect(result.id).toBe(1);
+  });
+
+  it("generateIntro requires authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.opportunities.generateIntro({ opportunityId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("workers", () => {
+  it("runAll triggers all background workers", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.workers.runAll();
+    expect(result).toEqual({ success: true });
+  });
+
+  it("generateBrief triggers daily brief for user", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.workers.generateBrief();
+    expect(result).toEqual({ success: true });
+  });
+
+  it("scanOpportunities triggers opportunity scan", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.workers.scanOpportunities();
+    expect(result).toEqual({ success: true });
+  });
+
+  it("workers require authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.workers.runAll()).rejects.toThrow();
   });
 });

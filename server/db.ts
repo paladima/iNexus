@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users, userGoals, people, personNotes, interactions,
   lists, listPeople, tasks, opportunities, drafts, searchQueries,
-  searchResults, voiceCaptures, dailyBriefs, activityLog,
+  searchResults, voiceCaptures, dailyBriefs, activityLog, relationships,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -239,7 +239,7 @@ export async function getListPeople(userId: number, listId: number) {
 // ─── Tasks ───────────────────────────────────────────────────────
 export async function createTask(userId: number, data: {
   title: string; description?: string; personId?: number; listId?: number;
-  dueAt?: Date; priority?: string; source?: string;
+  opportunityId?: number; dueAt?: Date; priority?: string; source?: string;
 }) {
   const db = await getDb();
   if (!db) return null;
@@ -325,7 +325,7 @@ export async function updateOpportunity(userId: number, oppId: number, data: Rec
 // ─── Drafts ──────────────────────────────────────────────────────
 export async function createDraft(userId: number, data: {
   personId?: number; listId?: number; draftType: string; tone?: string;
-  subject?: string; body: string; status?: string;
+  subject?: string; body: string; status?: string; metadataJson?: Record<string, unknown>;
 }) {
   const db = await getDb();
   if (!db) return null;
@@ -364,14 +364,21 @@ export async function deleteDraft(userId: number, draftId: number) {
 }
 
 // ─── Search Queries ──────────────────────────────────────────────
-export async function createSearchQuery(userId: number, queryText: string, filtersJson?: Record<string, unknown>) {
+export async function createSearchQuery(userId: number, queryText: string, filtersJson?: Record<string, unknown>, extra?: {
+  parsedIntentsJson?: Record<string, unknown>;
+  queryVariantsJson?: string[];
+  negativeTermsJson?: string[];
+}) {
   const db = await getDb();
   if (!db) return null;
-  const result = await db.insert(searchQueries).values({ userId, queryText, filtersJson });
+  const result = await db.insert(searchQueries).values({ userId, queryText, filtersJson, ...extra });
   return result[0].insertId;
 }
 
-export async function saveSearchResults(searchQueryId: number, results: Array<{ personSnapshotJson: Record<string, unknown>; rank: number }>) {
+export async function saveSearchResults(searchQueryId: number, results: Array<{
+  personSnapshotJson: Record<string, unknown>; rank: number;
+  scoringJson?: Record<string, unknown>; matchReasonsJson?: string[];
+}>) {
   const db = await getDb();
   if (!db) return;
   if (results.length === 0) return;
@@ -459,4 +466,99 @@ export async function getDashboardStats(userId: number) {
     totalPeople: Number(peopleCount?.count ?? 0),
     recentPeople,
   };
+}
+
+// ─── Relationships (Graph) ──────────────────────────────────────
+export async function createRelationship(userId: number, data: {
+  personAId: number; personBId: number; relationshipType: string;
+  confidence?: string; source?: string; metadataJson?: Record<string, unknown>;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(relationships).values({ userId, ...data });
+  return result[0].insertId;
+}
+
+export async function getRelationshipsForPerson(userId: number, personId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(relationships)
+    .where(and(
+      eq(relationships.userId, userId),
+      or(eq(relationships.personAId, personId), eq(relationships.personBId, personId))
+    ))
+    .orderBy(desc(relationships.confidence));
+}
+
+export async function findWarmPaths(userId: number, targetPersonId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // Find people who have a relationship with the target person
+  const targetRels = await db.select().from(relationships)
+    .where(and(
+      eq(relationships.userId, userId),
+      or(eq(relationships.personAId, targetPersonId), eq(relationships.personBId, targetPersonId))
+    ));
+
+  const connectorIds = targetRels.map(r =>
+    r.personAId === targetPersonId ? r.personBId : r.personAId
+  );
+  if (connectorIds.length === 0) return [];
+
+  // Get the connector people details
+  const connectors = await db.select().from(people)
+    .where(and(eq(people.userId, userId), inArray(people.id, connectorIds)));
+
+  return connectors.map(c => {
+    const rel = targetRels.find(r => r.personAId === c.id || r.personBId === c.id);
+    return {
+      connector: c,
+      relationshipType: rel?.relationshipType ?? "unknown",
+      confidence: rel?.confidence ?? "0.50",
+    };
+  });
+}
+
+// ─── Reconnect Detection ────────────────────────────────────────
+export async function getPeopleNeedingReconnect(userId: number, daysSinceLastInteraction = 90) {
+  const db = await getDb();
+  if (!db) return [];
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysSinceLastInteraction);
+
+  return db.select().from(people)
+    .where(and(
+      eq(people.userId, userId),
+      or(
+        lte(people.lastInteractionAt, cutoffDate),
+        isNull(people.lastInteractionAt)
+      )
+    ))
+    .orderBy(asc(people.lastInteractionAt))
+    .limit(20);
+}
+
+// ─── Batch operations ───────────────────────────────────────────
+export async function getListPeopleForBatch(userId: number, listId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ person: people })
+    .from(listPeople)
+    .innerJoin(people, eq(listPeople.personId, people.id))
+    .where(and(eq(listPeople.listId, listId), eq(people.userId, userId)));
+}
+
+export async function getOpportunityById(userId: number, oppId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(opportunities)
+    .where(and(eq(opportunities.id, oppId), eq(opportunities.userId, userId))).limit(1);
+  return result[0] ?? null;
+}
+
+// ─── All users (for workers) ────────────────────────────────────
+export async function getAllUsersWithBriefEnabled() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).where(eq(users.dailyBriefEnabled, 1));
 }

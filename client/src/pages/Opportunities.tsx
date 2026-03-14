@@ -10,12 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Target, TrendingUp } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Target, MoreHorizontal, FileText, CheckSquare, Users, Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 export default function Opportunities() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [loadingAction, setLoadingAction] = useState<Record<number, string>>({});
 
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.opportunities.list.useQuery(
@@ -28,6 +35,57 @@ export default function Opportunities() {
       toast.success("Opportunity updated");
     },
   });
+
+  const generateDraftMutation = trpc.opportunities.generateDraft.useMutation({
+    onSuccess: (data) => {
+      utils.drafts.list.invalidate();
+      toast.success("Draft generated from opportunity");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const createTaskMutation = trpc.opportunities.createTask.useMutation({
+    onSuccess: () => {
+      utils.tasks.list.invalidate();
+      toast.success("Task created from opportunity");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const generateIntroMutation = trpc.opportunities.generateIntro.useMutation({
+    onSuccess: () => {
+      utils.drafts.list.invalidate();
+      toast.success("Intro draft generated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const scanMutation = trpc.workers.scanOpportunities.useMutation({
+    onSuccess: () => {
+      utils.opportunities.list.invalidate();
+      toast.success("Opportunity scan complete");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleAction = async (oppId: number, action: string) => {
+    setLoadingAction((prev) => ({ ...prev, [oppId]: action }));
+    try {
+      if (action === "draft") {
+        await generateDraftMutation.mutateAsync({ opportunityId: oppId });
+      } else if (action === "task") {
+        await createTaskMutation.mutateAsync({ opportunityId: oppId });
+      } else if (action === "intro") {
+        await generateIntroMutation.mutateAsync({ opportunityId: oppId });
+      }
+    } finally {
+      setLoadingAction((prev) => {
+        const next = { ...prev };
+        delete next[oppId];
+        return next;
+      });
+    }
+  };
 
   const scoreColor = (score: string | null) => {
     const s = parseFloat(score ?? "0");
@@ -45,17 +103,32 @@ export default function Opportunities() {
             AI-detected signals and networking opportunities.
           </p>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="acted_on">Acted On</SelectItem>
-            <SelectItem value="dismissed">Dismissed</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
+          >
+            {scanMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-1" />
+            )}
+            Scan Now
+          </Button>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="acted_on">Acted On</SelectItem>
+              <SelectItem value="dismissed">Dismissed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {isLoading ? (
@@ -108,25 +181,60 @@ export default function Opportunities() {
                       </p>
                     )}
                   </div>
-                  {opp.status === "open" && (
-                    <div className="flex gap-2 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => updateMutation.mutate({ id: opp.id, status: "acted_on" })}
-                      >
-                        Act
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => updateMutation.mutate({ id: opp.id, status: "dismissed" })}
-                        className="text-muted-foreground"
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex gap-2 shrink-0 items-center">
+                    {loadingAction[opp.id] && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                    {opp.status === "open" && (
+                      <>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleAction(opp.id, "draft")}
+                              disabled={!!loadingAction[opp.id]}
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Generate Draft
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleAction(opp.id, "task")}
+                              disabled={!!loadingAction[opp.id]}
+                            >
+                              <CheckSquare className="h-4 w-4 mr-2" />
+                              Create Task
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleAction(opp.id, "intro")}
+                              disabled={!!loadingAction[opp.id]}
+                            >
+                              <Users className="h-4 w-4 mr-2" />
+                              Generate Intro
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => updateMutation.mutate({ id: opp.id, status: "acted_on" })}
+                        >
+                          Act
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => updateMutation.mutate({ id: opp.id, status: "dismissed" })}
+                          className="text-muted-foreground"
+                        >
+                          Dismiss
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -136,9 +244,21 @@ export default function Opportunities() {
         <div className="text-center py-16">
           <Target className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
           <h3 className="font-semibold text-lg mb-2">No opportunities yet</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-4">
             Opportunities will appear as AI detects relevant signals.
           </p>
+          <Button
+            variant="outline"
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
+          >
+            {scanMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-1" />
+            )}
+            Run Opportunity Scan
+          </Button>
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Users, UserMinus } from "lucide-react";
+import { ArrowLeft, Users, UserMinus, Send, Loader2 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 
@@ -19,6 +19,14 @@ export default function ListDetail() {
       utils.lists.getById.invalidate({ id: listId });
       toast.success("Person removed from list");
     },
+  });
+
+  const batchOutreachMutation = trpc.lists.batchOutreach.useMutation({
+    onSuccess: (result) => {
+      utils.drafts.list.invalidate();
+      toast.success(`Generated ${result.total} drafts for this list`);
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   if (isLoading) {
@@ -43,16 +51,32 @@ export default function ListDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/lists")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{data.name}</h1>
-          {data.description && (
-            <p className="text-muted-foreground text-sm">{data.description}</p>
-          )}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/lists")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{data.name}</h1>
+            {data.description && (
+              <p className="text-muted-foreground text-sm">{data.description}</p>
+            )}
+          </div>
         </div>
+        {data.people && data.people.length > 0 && (
+          <Button
+            onClick={() => batchOutreachMutation.mutate({ listId })}
+            disabled={batchOutreachMutation.isPending}
+            className="gap-2"
+          >
+            {batchOutreachMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+            Batch Outreach
+          </Button>
+        )}
       </div>
 
       {data.people && data.people.length > 0 ? (

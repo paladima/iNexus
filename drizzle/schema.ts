@@ -139,6 +139,7 @@ export const tasks = mysqlTable("tasks", {
   dueAt: timestamp("dueAt"),
   priority: varchar("priority", { length: 16 }).default("medium"),
   status: varchar("status", { length: 16 }).default("open"),
+  opportunityId: int("opportunityId"),
   source: varchar("source", { length: 32 }).default("manual"),
   metadataJson: json("metadataJson").$type<Record<string, unknown>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -201,6 +202,9 @@ export const searchQueries = mysqlTable("search_queries", {
   userId: int("userId").notNull(),
   queryText: text("queryText").notNull(),
   filtersJson: json("filtersJson").$type<Record<string, unknown>>(),
+  parsedIntentsJson: json("parsedIntentsJson").$type<Record<string, unknown>>(),
+  queryVariantsJson: json("queryVariantsJson").$type<string[]>(),
+  negativeTermsJson: json("negativeTermsJson").$type<string[]>(),
   resultCount: int("resultCount").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
@@ -215,6 +219,8 @@ export const searchResults = mysqlTable("search_results", {
   searchQueryId: int("searchQueryId").notNull(),
   personSnapshotJson: json("personSnapshotJson").$type<Record<string, unknown>>().notNull(),
   rank: int("rank"),
+  scoringJson: json("scoringJson").$type<Record<string, unknown>>(),
+  matchReasonsJson: json("matchReasonsJson").$type<string[]>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_search_results_queryId").on(table.searchQueryId),
@@ -267,3 +273,23 @@ export const activityLog = mysqlTable("activity_log", {
 ]);
 
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
+
+// ─── Relationships (Graph) ───────────────────────────────────────
+export const relationships = mysqlTable("relationships", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  personAId: int("personAId").notNull(),
+  personBId: int("personBId").notNull(),
+  relationshipType: varchar("relationshipType", { length: 64 }).notNull(),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }).default("0.50"),
+  source: varchar("source", { length: 32 }).default("inferred"),
+  metadataJson: json("metadataJson").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_relationships_userId").on(table.userId),
+  index("idx_relationships_personA").on(table.personAId),
+  index("idx_relationships_personB").on(table.personBId),
+]);
+
+export type Relationship = typeof relationships.$inferSelect;

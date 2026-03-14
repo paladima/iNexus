@@ -17,6 +17,8 @@ import {
   MapPin,
   Briefcase,
   Linkedin,
+  GitBranch,
+  Route,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
@@ -30,6 +32,8 @@ export default function PersonProfile() {
 
   const utils = trpc.useUtils();
   const { data: person, isLoading } = trpc.people.getById.useQuery({ id: personId });
+  const { data: relationships } = trpc.relationships.forPerson.useQuery({ personId });
+  const { data: warmPaths } = trpc.relationships.warmPaths.useQuery({ targetPersonId: personId });
 
   const addNoteMutation = trpc.people.addNote.useMutation({
     onSuccess: () => {
@@ -171,6 +175,68 @@ export default function PersonProfile() {
               </CardHeader>
               <CardContent className="pt-0">
                 <p className="text-sm text-muted-foreground">{person.aiSummary}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Warm Paths */}
+          {warmPaths && warmPaths.length > 0 && (
+            <Card className="border-primary/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Route className="h-4 w-4 text-primary" /> Warm Paths
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2">
+                {warmPaths.map((path: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">via</span>
+                    <button
+                      className="text-primary hover:underline font-medium"
+                      onClick={() => setLocation(`/people/${path.intermediary.id}`)}
+                    >
+                      {path.intermediary.fullName}
+                    </button>
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {path.relationshipType}
+                    </Badge>
+                    {path.confidence && (
+                      <span className="text-xs text-muted-foreground">
+                        ({Math.round(parseFloat(path.confidence) * 100)}%)
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Relationships */}
+          {relationships && relationships.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-muted-foreground" /> Connections
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2">
+                {relationships.map((rel: any) => {
+                  const otherPerson = rel.personAId === personId ? rel.personB : rel.personA;
+                  if (!otherPerson) return null;
+                  return (
+                    <div key={rel.id} className="flex items-center gap-2 text-sm">
+                      <button
+                        className="text-primary hover:underline"
+                        onClick={() => setLocation(`/people/${otherPerson.id}`)}
+                      >
+                        {otherPerson.fullName}
+                      </button>
+                      <Badge variant="secondary" className="text-xs capitalize">
+                        {rel.relationshipType}
+                      </Badge>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           )}

@@ -8,6 +8,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 import * as db from "./db";
+import { runAllWorkers, generateDailyBriefForUser, scanOpportunitiesForUser } from "./workers";
 
 export const appRouter = router({
   system: systemRouter,
@@ -268,6 +269,59 @@ export const appRouter = router({
         await db.removePersonFromList(input.listId, input.personId);
         return { success: true };
       }),
+    batchOutreach: protectedProcedure
+      .input(z.object({
+        listId: z.number(),
+        tone: z.string().optional(),
+        context: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const listPeople = await db.getListPeopleForBatch(ctx.user.id, input.listId);
+        if (listPeople.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "List is empty" });
+        const goals = await db.getUserGoals(ctx.user.id);
+        const draftsCreated: Array<{ personId: number; personName: string; draftId: number | null }> = [];
+
+        for (const { person } of listPeople) {
+          try {
+            const response = await invokeLLM({
+              messages: [
+                {
+                  role: "system",
+                  content: `Generate a personalized outreach message. Tone: ${input.tone ?? "professional"}. Return JSON: { "subject": "...", "body": "..." }`
+                },
+                {
+                  role: "user",
+                  content: `Person: ${JSON.stringify(person)}\nUser goals: ${JSON.stringify(goals)}\nContext: ${input.context ?? "Batch outreach for list"}`
+                }
+              ],
+              response_format: { type: "json_object" },
+            });
+            const content = response.choices[0]?.message?.content;
+            const parsed = typeof content === "string" ? JSON.parse(content) : {};
+            const draftId = await db.createDraft(ctx.user.id, {
+              personId: person.id,
+              listId: input.listId,
+              draftType: "batch_outreach",
+              tone: input.tone ?? "professional",
+              subject: parsed.subject ?? "",
+              body: parsed.body ?? "",
+            });
+            draftsCreated.push({ personId: person.id, personName: person.fullName, draftId });
+          } catch (err) {
+            console.error(`[BatchOutreach] Failed for person ${person.id}:`, err);
+            draftsCreated.push({ personId: person.id, personName: person.fullName, draftId: null });
+          }
+        }
+
+        await db.logActivity(ctx.user.id, {
+          activityType: "batch_outreach",
+          title: `Batch outreach: ${draftsCreated.length} drafts for list`,
+          entityType: "list",
+          entityId: input.listId,
+          metadataJson: { count: draftsCreated.length },
+        });
+        return { drafts: draftsCreated, total: draftsCreated.length };
+      }),
   }),
 
   // ─── Tasks ───────────────────────────────────────────────────
@@ -383,6 +437,123 @@ export const appRouter = router({
         await db.updateOpportunity(ctx.user.id, id, data);
         return { success: true };
       }),
+    generateDraft: protectedProcedure
+      .input(z.object({
+        opportunityId: z.number(),
+        tone: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const opp = await db.getOpportunityById(ctx.user.id, input.opportunityId);
+        if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "Opportunity not found" });
+        let person = null;
+        if (opp.personId) person = await db.getPersonById(ctx.user.id, opp.personId);
+        const goals = await db.getUserGoals(ctx.user.id);
+
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a professional networking message writer. Generate a message based on a detected opportunity. Tone: ${input.tone ?? "professional"}. Return JSON: { "subject": "...", "body": "..." }`
+            },
+            {
+              role: "user",
+              content: `Opportunity: ${JSON.stringify(opp)}\nPerson: ${JSON.stringify(person)}\nUser goals: ${JSON.stringify(goals)}`
+            }
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = response.choices[0]?.message?.content;
+        const parsed = typeof content === "string" ? JSON.parse(content) : {};
+        const draftId = await db.createDraft(ctx.user.id, {
+          personId: opp.personId ?? undefined,
+          draftType: "opportunity_outreach",
+          tone: input.tone ?? "professional",
+          subject: parsed.subject ?? "",
+          body: parsed.body ?? "",
+          metadataJson: { opportunityId: input.opportunityId },
+        });
+        await db.logActivity(ctx.user.id, {
+          activityType: "draft_from_opportunity",
+          title: `Generated draft from opportunity: ${opp.title}`,
+          entityType: "draft",
+          entityId: draftId ?? undefined,
+        });
+        return { id: draftId, ...parsed };
+      }),
+    createTask: protectedProcedure
+      .input(z.object({
+        opportunityId: z.number(),
+        title: z.string().optional(),
+        dueAt: z.string().optional(),
+        priority: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const opp = await db.getOpportunityById(ctx.user.id, input.opportunityId);
+        if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "Opportunity not found" });
+        const taskId = await db.createTask(ctx.user.id, {
+          title: input.title ?? opp.recommendedAction ?? `Follow up on: ${opp.title}`,
+          description: opp.signalSummary,
+          personId: opp.personId ?? undefined,
+          opportunityId: input.opportunityId,
+          dueAt: input.dueAt ? new Date(input.dueAt) : undefined,
+          priority: input.priority ?? "medium",
+          source: "opportunity",
+        });
+        await db.logActivity(ctx.user.id, {
+          activityType: "task_from_opportunity",
+          title: `Created task from opportunity: ${opp.title}`,
+          entityType: "task",
+          entityId: taskId ?? undefined,
+        });
+        return { id: taskId };
+      }),
+    generateIntro: protectedProcedure
+      .input(z.object({
+        opportunityId: z.number(),
+        tone: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const opp = await db.getOpportunityById(ctx.user.id, input.opportunityId);
+        if (!opp) throw new TRPCError({ code: "NOT_FOUND" });
+        const meta = opp.metadataJson as Record<string, unknown> | null;
+        const personAId = meta?.personAId as number | undefined;
+        const personBId = meta?.personBId as number | undefined;
+        let personA = null, personB = null;
+        if (personAId) personA = await db.getPersonById(ctx.user.id, personAId);
+        if (personBId) personB = await db.getPersonById(ctx.user.id, personBId);
+
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a professional networking assistant. Write an introduction message connecting two people. Tone: ${input.tone ?? "warm"}. Return JSON: { "subject": "...", "body": "..." }`
+            },
+            {
+              role: "user",
+              content: `Person A: ${JSON.stringify(personA)}\nPerson B: ${JSON.stringify(personB)}\nReason for intro: ${opp.signalSummary}`
+            }
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = response.choices[0]?.message?.content;
+        const parsed = typeof content === "string" ? JSON.parse(content) : {};
+        const draftId = await db.createDraft(ctx.user.id, {
+          draftType: "intro_message",
+          tone: input.tone ?? "warm",
+          subject: parsed.subject ?? "",
+          body: parsed.body ?? "",
+          metadataJson: { opportunityId: input.opportunityId, personAId, personBId },
+        });
+        await db.logActivity(ctx.user.id, {
+          activityType: "intro_draft_generated",
+          title: `Generated intro between ${personA?.fullName ?? "?"} and ${personB?.fullName ?? "?"}`,
+          entityType: "draft",
+          entityId: draftId ?? undefined,
+        });
+        return { id: draftId, ...parsed };
+      }),
   }),
 
   // ─── Drafts ──────────────────────────────────────────────────
@@ -481,7 +652,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Discover ────────────────────────────────────────────────
+  // ─── Discover (Intent Decomposition + Role-Aware Ranking) ───
   discover: router({
     search: protectedProcedure
       .input(z.object({
@@ -490,40 +661,91 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const goals = await db.getUserGoals(ctx.user.id);
-        const queryId = await db.createSearchQuery(ctx.user.id, input.query, input.filters as Record<string, unknown>);
 
-        const response = await invokeLLM({
+        // Step 1: Intent Decomposition — parse query into structured intent
+        const intentResponse = await invokeLLM({
           messages: [
             {
               role: "system",
-              content: `You are a networking discovery engine. Based on the search query and user goals, generate a list of 5-8 relevant people profiles. Return JSON: { "results": [{ "fullName": "...", "title": "...", "company": "...", "location": "...", "relevanceScore": 0.85, "whyRelevant": "...", "linkedinUrl": "", "sourceType": "web" }] }`
+              content: `You are a search intent parser for a networking tool. Decompose the user's search query into structured intent. Return JSON: { "topic": "...", "role": "...", "geo": "...", "industry": "...", "speaker": true/false, "negatives": ["..."], "queryVariants": ["variant1", "variant2", "variant3"] }. queryVariants should be 2-3 alternative phrasings of the same search to broaden recall.`
             },
             {
               role: "user",
-              content: `Search: "${input.query}"\nFilters: ${JSON.stringify(input.filters ?? {})}\nUser goals: ${JSON.stringify(goals)}`
+              content: `Query: "${input.query}"\nUser goals: ${JSON.stringify(goals)}`
             }
           ],
           response_format: { type: "json_object" },
         });
 
-        const content = response.choices[0]?.message?.content;
-        const parsed = typeof content === "string" ? JSON.parse(content) : { results: [] };
-        const results = parsed.results ?? [];
+        const intentContent = intentResponse.choices[0]?.message?.content;
+        const intent = typeof intentContent === "string" ? JSON.parse(intentContent) : {};
+        const queryVariants = intent.queryVariants ?? [input.query];
+        const negatives = intent.negatives ?? [];
+
+        // Save search query with parsed intents
+        const queryId = await db.createSearchQuery(ctx.user.id, input.query, input.filters as Record<string, unknown>, {
+          parsedIntentsJson: intent,
+          queryVariantsJson: queryVariants,
+          negativeTermsJson: negatives,
+        });
+
+        // Step 2: Multi-query search — generate candidates from all variants
+        const searchResponse = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a networking discovery engine with role-aware ranking. Generate 8-12 relevant people profiles based on the search intent. For each person, provide scoring on 6 axes (0-1 each):\n- roleMatch: how well their title/role matches the query\n- industryMatch: alignment with target industry\n- geoMatch: geographic relevance\n- seniorityMatch: appropriate seniority level\n- goalAlignment: relevance to user's networking goals\n- signalStrength: strength of the networking signal\n\nReturn JSON: { "results": [{ "fullName": "...", "title": "...", "company": "...", "location": "...", "sourceType": "web", "linkedinUrl": "", "scoring": { "roleMatch": 0.9, "industryMatch": 0.8, "geoMatch": 0.7, "seniorityMatch": 0.85, "goalAlignment": 0.9, "signalStrength": 0.75 }, "matchReasons": ["reason1", "reason2"], "whyRelevant": "..." }] }. Exclude anyone matching these negatives: ${JSON.stringify(negatives)}`
+            },
+            {
+              role: "user",
+              content: `Intent: ${JSON.stringify(intent)}\nQuery variants: ${JSON.stringify(queryVariants)}\nFilters: ${JSON.stringify(input.filters ?? {})}\nUser goals: ${JSON.stringify(goals)}`
+            }
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const searchContent = searchResponse.choices[0]?.message?.content;
+        const searchParsed = typeof searchContent === "string" ? JSON.parse(searchContent) : { results: [] };
+        let results = searchParsed.results ?? [];
+
+        // Step 3: Score and rank with weighted formula
+        const weights = { roleMatch: 0.25, industryMatch: 0.20, geoMatch: 0.15, seniorityMatch: 0.15, goalAlignment: 0.15, signalStrength: 0.10 };
+        results = results.map((r: Record<string, unknown>) => {
+          const scoring = (r.scoring ?? {}) as Record<string, number>;
+          const totalScore = Object.entries(weights).reduce((sum, [key, weight]) => {
+            return sum + (scoring[key] ?? 0) * weight;
+          }, 0);
+          return { ...r, relevanceScore: Math.round(totalScore * 100) / 100 };
+        });
+
+        // Step 4: Deduplicate by name
+        const seen = new Set<string>();
+        results = results.filter((r: Record<string, unknown>) => {
+          const name = (r.fullName as string ?? "").toLowerCase();
+          if (seen.has(name)) return false;
+          seen.add(name);
+          return true;
+        });
+
+        // Sort by relevanceScore descending
+        results.sort((a: Record<string, unknown>, b: Record<string, unknown>) => ((b.relevanceScore as number) ?? 0) - ((a.relevanceScore as number) ?? 0));
 
         if (queryId) {
           await db.saveSearchResults(queryId, results.map((r: Record<string, unknown>, i: number) => ({
             personSnapshotJson: r,
             rank: i + 1,
+            scoringJson: (r.scoring ?? {}) as Record<string, unknown>,
+            matchReasonsJson: (r.matchReasons ?? []) as string[],
           })));
         }
 
         await db.logActivity(ctx.user.id, {
           activityType: "discovery_search",
           title: `Searched: "${input.query}"`,
-          metadataJson: { resultCount: results.length },
+          metadataJson: { resultCount: results.length, intent },
         });
 
-        return { queryId, results };
+        return { queryId, results, intent, queryVariants };
       }),
     savePerson: protectedProcedure
       .input(z.object({
@@ -646,6 +868,48 @@ export const appRouter = router({
         await db.updateUserSettings(ctx.user.id, input);
         return { success: true };
       }),
+  }),
+
+  // ─── Relationships & Warm Paths ──────────────────────────────
+  relationships: router({
+    forPerson: protectedProcedure
+      .input(z.object({ personId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return db.getRelationshipsForPerson(ctx.user.id, input.personId);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        personAId: z.number(),
+        personBId: z.number(),
+        relationshipType: z.string(),
+        confidence: z.string().optional(),
+        source: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const id = await db.createRelationship(ctx.user.id, input);
+        return { id };
+      }),
+    warmPaths: protectedProcedure
+      .input(z.object({ targetPersonId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return db.findWarmPaths(ctx.user.id, input.targetPersonId);
+      }),
+  }),
+
+  // ─── Workers (manual trigger) ───────────────────────────────
+  workers: router({
+    runAll: protectedProcedure.mutation(async ({ ctx }) => {
+      await runAllWorkers();
+      return { success: true };
+    }),
+    generateBrief: protectedProcedure.mutation(async ({ ctx }) => {
+      await generateDailyBriefForUser(ctx.user.id);
+      return { success: true };
+    }),
+    scanOpportunities: protectedProcedure.mutation(async ({ ctx }) => {
+      await scanOpportunitiesForUser(ctx.user.id);
+      return { success: true };
+    }),
   }),
 
   // ─── AI Command Bar ─────────────────────────────────────────
