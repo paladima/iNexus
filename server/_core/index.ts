@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { startWorkers } from "../workers";
 import { registerAllHandlers } from "../services/job.handlers";
 import { startJobProcessor } from "../services/job.service";
+import { initializeProviders } from "../providers/init";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -64,7 +65,8 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
     // Start background workers
     startWorkers();
-    // Register job handlers and start job processor
+    // Initialize providers, register job handlers, start job processor
+    initializeProviders();
     registerAllHandlers();
     startJobProcessor();
   });

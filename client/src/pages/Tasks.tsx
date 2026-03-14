@@ -158,8 +158,8 @@ export default function Tasks() {
                 onClick={() => createMutation.mutate({
                   title: form.title,
                   description: form.description || undefined,
-                  dueAt: form.dueAt || undefined,
-                  priority: form.priority,
+                  dueDate: form.dueAt || undefined,
+                  priority: form.priority as "low" | "medium" | "high",
                 })}
                 disabled={!form.title.trim() || createMutation.isPending}
               >
@@ -205,7 +205,7 @@ export default function Tasks() {
                         onCheckedChange={(checked) => {
                           updateMutation.mutate({
                             id: task.id,
-                            status: checked ? "completed" : "open",
+                            status: checked ? "done" : "open",
                           });
                         }}
                       />

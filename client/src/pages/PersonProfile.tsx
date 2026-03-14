@@ -32,8 +32,8 @@ export default function PersonProfile() {
 
   const utils = trpc.useUtils();
   const { data: person, isLoading } = trpc.people.getById.useQuery({ id: personId });
-  const { data: relationships } = trpc.relationships.forPerson.useQuery({ personId });
-  const { data: warmPaths } = trpc.relationships.warmPaths.useQuery({ targetPersonId: personId });
+  const { data: relationships } = trpc.relationships.list.useQuery({ personId });
+  const { data: warmPaths } = trpc.relationships.warmPaths.useQuery({ personId });
 
   const addNoteMutation = trpc.people.addNote.useMutation({
     onSuccess: () => {

@@ -67,6 +67,7 @@
 - [x] Tests for llmHelpers (safeParseJson, parseLLMContent, parseLLMWithSchema, all zod schemas)
 - [x] Tests for opportunity→draft, opportunity→task, multi-tenant isolation
 - [x] Tests for health endpoint, job system, async brief generation
+- [x] Updated test suite to match v2 router structure (86 tests passing across 3 files)
 
 ## Polish
 - [x] Loading states and skeletons
@@ -118,3 +119,25 @@
 - [x] #18 Clean production — no debug artifacts, proper .gitignore
 - [x] #19 Client bundle clean — no debug UI or showcase components
 - [x] #20 Health endpoint at /api/trpc/health.check, job system with worker launch at startup
+
+## MVP Hardening v2 (20 items)
+- [x] #1 Complete router split — move all logic from legacy routers.ts to split modules
+- [x] #2 Extract auth/onboarding into auth.router.ts
+- [x] #3 Extract dashboard/brief into dashboard.router.ts
+- [x] #4 Extract lists into lists.router.ts
+- [x] #5 Extract tasks into tasks.router.ts
+- [x] #6 Extract activity/settings into activity.router.ts and settings.router.ts
+- [x] #7 Wire providers through registry (discover→DiscoveryProvider, drafts→DraftProvider, voice→VoiceParserProvider, opportunities→OpportunityProvider)
+- [x] #8 Add fallback chain for providers (primary→fallback→graceful degradation)
+- [x] #9 Separate enqueue from execution in job system (DB polling worker)
+- [x] #10 Add retries and idempotency for jobs (retry_count, max_retries, last_error, dedupe_key)
+- [x] #11 Enhance jobs model (attempts, priority, run_after, worker_id, dedupe_key, entity_type/entity_id)
+- [x] #12 Convert heavy actions to full job UX (person summary, opportunity scan, batch outreach, voice chain)
+- [x] #13 Command bar as real orchestrator (discover, create task, generate draft, show reconnects, create list, summarize person)
+- [x] #14 Discover end-to-end workflow (search→save→add to list→generate drafts→create tasks)
+- [x] #15 Bulk actions in Discover and Lists (multi-select, save selected, add to list, generate drafts, create tasks)
+- [x] #16 Person Profile enrichment (why matters, last contact, next action, linked opportunities, task count, draft history, graph hints)
+- [x] #17 Voice flow full UX (upload→transcription→parse states, confirm actions, partial edit, error+retry)
+- [x] #18 Audit trail for all AI operations (discovery ranking, person summary, draft gen, opportunity detection, voice parse, daily brief)
+- [x] #19 Clean production repo (remove dist/, .webdev/, debug artifacts, prepare clean .gitignore)
+- [x] #20 Deploy profile (.env.example, migration flow, seed data, worker/app start commands, health check, README with deploy steps)

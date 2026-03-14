@@ -14,6 +14,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    globals: true,
     include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
   },
 });

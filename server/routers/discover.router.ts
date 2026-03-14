@@ -1,16 +1,28 @@
 /**
- * #17: Discover router — Intent Decomposition + Role-Aware Ranking
+ * Discover Router (#14-15) — Intent Decomposition + Role-Aware Ranking + Bulk Actions
+ * End-to-end workflow: search → save → add to list → generate drafts → create tasks
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as repo from "../repositories";
+import { enqueueJob } from "../services/job.service";
 import {
   parseLLMContent,
   parseLLMWithSchema,
   intentDecompositionSchema,
 } from "../llmHelpers";
+
+const personInputSchema = z.object({
+  fullName: z.string(),
+  title: z.string().optional(),
+  company: z.string().optional(),
+  location: z.string().optional(),
+  linkedinUrl: z.string().optional(),
+  sourceType: z.string().optional(),
+  relevanceScore: z.string().optional(),
+});
 
 export const discoverRouter = router({
   search: protectedProcedure
@@ -102,16 +114,10 @@ export const discoverRouter = router({
 
       return { queryId, results, intent, queryVariants };
     }),
+
+  // ─── Save single person ─────────────────────────────────────
   savePerson: protectedProcedure
-    .input(z.object({
-      fullName: z.string(),
-      title: z.string().optional(),
-      company: z.string().optional(),
-      location: z.string().optional(),
-      linkedinUrl: z.string().optional(),
-      sourceType: z.string().optional(),
-      relevanceScore: z.string().optional(),
-    }))
+    .input(personInputSchema)
     .mutation(async ({ ctx, input }) => {
       const names = input.fullName.split(" ");
       const id = await repo.createPerson(ctx.user.id, {
@@ -127,5 +133,104 @@ export const discoverRouter = router({
         entityId: id ?? undefined,
       });
       return { id };
+    }),
+
+  // ─── Bulk save selected people (#15) ────────────────────────
+  bulkSave: protectedProcedure
+    .input(z.object({ people: z.array(personInputSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      const savedIds: number[] = [];
+      for (const p of input.people) {
+        const names = p.fullName.split(" ");
+        const id = await repo.createPerson(ctx.user.id, {
+          ...p,
+          firstName: names[0],
+          lastName: names.slice(1).join(" "),
+          status: "saved",
+        });
+        if (id) savedIds.push(id);
+      }
+      await repo.logActivity(ctx.user.id, {
+        activityType: "bulk_save_from_discovery",
+        title: `Bulk saved ${savedIds.length} people from discovery`,
+        metadataJson: { count: savedIds.length },
+      });
+      return { savedIds, count: savedIds.length };
+    }),
+
+  // ─── Bulk add to list (#15) ─────────────────────────────────
+  bulkAddToList: protectedProcedure
+    .input(z.object({
+      personIds: z.array(z.number()),
+      listId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify list ownership
+      const list = await repo.getListById(ctx.user.id, input.listId);
+      if (!list) throw new TRPCError({ code: "NOT_FOUND", message: "List not found" });
+
+      let added = 0;
+      for (const personId of input.personIds) {
+        try {
+          await repo.addPersonToList(ctx.user.id, input.listId, personId);
+          added++;
+        } catch {
+          // Skip duplicates
+        }
+      }
+      await repo.logActivity(ctx.user.id, {
+        activityType: "bulk_add_to_list",
+        title: `Added ${added} people to list "${(list as any).name}"`,
+        entityType: "list",
+        entityId: input.listId,
+      });
+      return { added };
+    }),
+
+  // ─── Bulk generate drafts (#15) ─────────────────────────────
+  bulkGenerateDrafts: protectedProcedure
+    .input(z.object({
+      personIds: z.array(z.number()),
+      tone: z.string().default("professional"),
+      context: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const jobId = await enqueueJob(ctx.user.id, "batch_outreach", {
+        personIds: input.personIds,
+        tone: input.tone,
+        context: input.context,
+      }, { priority: 1 });
+      return { jobId, status: "queued", count: input.personIds.length };
+    }),
+
+  // ─── Bulk create follow-up tasks (#15) ──────────────────────
+  bulkCreateTasks: protectedProcedure
+    .input(z.object({
+      personIds: z.array(z.number()),
+      taskPrefix: z.string().default("Follow up with"),
+      priority: z.string().default("medium"),
+      daysFromNow: z.number().default(3),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const createdIds: number[] = [];
+      for (const personId of input.personIds) {
+        const person = await repo.getPersonById(ctx.user.id, personId);
+        if (!person) continue;
+        const dueAt = new Date();
+        dueAt.setDate(dueAt.getDate() + input.daysFromNow);
+        const id = await repo.createTask(ctx.user.id, {
+          title: `${input.taskPrefix} ${person.fullName}`,
+          priority: input.priority,
+          dueAt,
+          personId,
+        });
+        if (id) createdIds.push(id);
+      }
+      await repo.logActivity(ctx.user.id, {
+        activityType: "bulk_create_tasks",
+        title: `Created ${createdIds.length} follow-up tasks`,
+        metadataJson: { count: createdIds.length },
+      });
+      return { createdIds, count: createdIds.length };
     }),
 });

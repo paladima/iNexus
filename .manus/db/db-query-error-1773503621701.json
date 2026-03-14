@@ -1,0 +1,8 @@
+{
+  "query": "ALTER TABLE jobs ADD COLUMN priority INT DEFAULT 0 NOT NULL AFTER status;\nALTER TABLE jobs ADD COLUMN progress INT DEFAULT 0;\nALTER TABLE jobs ADD COLUMN cancelledAt TIMESTAMP NULL;\nALTER TABLE jobs ADD COLUMN retryCount INT DEFAULT 0 NOT NULL;\nALTER TABLE jobs ADD COLUMN maxRetries INT DEFAULT 3 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute ALTER TABLE jobs ADD COLUMN priority INT DEFAULT 0 NOT NULL AFTER status;\nALTER TABLE jobs ADD COLUMN progress INT DEFAULT 0;\nALTER TABLE jobs ADD COLUMN cancelledAt TIMESTAMP NULL;\nALTER TABLE jobs ADD COLUMN retryCount INT DEFAULT 0 NOT NULL;\nALTER TABLE jobs ADD COLUMN maxRetries INT DEFAULT 3 NOT NULL;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'acfgcxfxutlsm6tkpdotrh.jobs' doesn't exist"
+  ]
+}

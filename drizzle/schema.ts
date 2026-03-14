@@ -300,15 +300,21 @@ export const jobs = mysqlTable("jobs", {
   userId: int("userId").notNull(),
   jobType: varchar("jobType", { length: 64 }).notNull(),
   status: varchar("status", { length: 16 }).default("pending").notNull(),
+  priority: int("priority").default(0).notNull(),
+  progress: int("progress").default(0),
+  retryCount: int("retryCount").default(0).notNull(),
+  maxRetries: int("maxRetries").default(3).notNull(),
   payload: json("payload").$type<Record<string, unknown>>().default({}),
   result: json("result").$type<Record<string, unknown>>(),
   error: text("error"),
   startedAt: timestamp("startedAt"),
   finishedAt: timestamp("finishedAt"),
+  cancelledAt: timestamp("cancelledAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_jobs_userId_type").on(table.userId, table.jobType),
   index("idx_jobs_status").on(table.status),
+  index("idx_jobs_priority").on(table.priority),
 ]);
 
 export type Job = typeof jobs.$inferSelect;
