@@ -21,6 +21,20 @@ export async function getDb() {
   return _db;
 }
 
+/**
+ * #10: Require DB connection — throws in production, returns null in dev.
+ */
+export async function requireDb() {
+  const db = await getDb();
+  if (!db) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Database connection unavailable");
+    }
+    console.warn("[Database] Connection unavailable in dev mode");
+  }
+  return db;
+}
+
 // ─── Users ───────────────────────────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
@@ -106,6 +120,8 @@ export async function getPeople(userId: number, opts?: {
   const conditions = [eq(people.userId, userId)];
   if (opts?.search) conditions.push(like(people.fullName, `%${opts.search}%`));
   if (opts?.status) conditions.push(eq(people.status, opts.status));
+  // #6: Implement tag filter via JSON search
+  if (opts?.tag) conditions.push(sql`JSON_CONTAINS(${people.tags}, JSON_QUOTE(${opts.tag}))`);
 
   const where = and(...conditions);
   const limit = opts?.limit ?? 50;
@@ -144,10 +160,13 @@ export async function addPersonNote(userId: number, personId: number, content: s
   await db.insert(personNotes).values({ userId, personId, content, noteType, createdBy });
 }
 
-export async function getPersonNotes(personId: number) {
+// #7: Fixed — now requires userId to prevent multi-tenant leak
+export async function getPersonNotes(userId: number, personId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(personNotes).where(eq(personNotes.personId, personId)).orderBy(desc(personNotes.createdAt));
+  return db.select().from(personNotes)
+    .where(and(eq(personNotes.personId, personId), eq(personNotes.userId, userId)))
+    .orderBy(desc(personNotes.createdAt));
 }
 
 // ─── Interactions ────────────────────────────────────────────────
@@ -212,17 +231,30 @@ export async function deleteList(userId: number, listId: number) {
   await db.delete(lists).where(and(eq(lists.id, listId), eq(lists.userId, userId)));
 }
 
-export async function addPersonToList(listId: number, personId: number) {
+// #8-9: Ownership validation for list operations
+export async function addPersonToList(userId: number, listId: number, personId: number) {
   const db = await getDb();
   if (!db) return;
+  // Verify list belongs to user
+  const [list] = await db.select().from(lists)
+    .where(and(eq(lists.id, listId), eq(lists.userId, userId))).limit(1);
+  if (!list) throw new Error("List not found or not owned by user");
+  // Verify person belongs to user
+  const [person] = await db.select().from(people)
+    .where(and(eq(people.id, personId), eq(people.userId, userId))).limit(1);
+  if (!person) throw new Error("Person not found or not owned by user");
   try {
     await db.insert(listPeople).values({ listId, personId });
   } catch { /* duplicate, ignore */ }
 }
 
-export async function removePersonFromList(listId: number, personId: number) {
+export async function removePersonFromList(userId: number, listId: number, personId: number) {
   const db = await getDb();
   if (!db) return;
+  // Verify list belongs to user
+  const [list] = await db.select().from(lists)
+    .where(and(eq(lists.id, listId), eq(lists.userId, userId))).limit(1);
+  if (!list) throw new Error("List not found or not owned by user");
   await db.delete(listPeople).where(and(eq(listPeople.listId, listId), eq(listPeople.personId, personId)));
 }
 
@@ -469,12 +501,20 @@ export async function getDashboardStats(userId: number) {
 }
 
 // ─── Relationships (Graph) ──────────────────────────────────────
+// #9: Ownership validation for relationship creation
 export async function createRelationship(userId: number, data: {
   personAId: number; personBId: number; relationshipType: string;
   confidence?: string; source?: string; metadataJson?: Record<string, unknown>;
 }) {
   const db = await getDb();
   if (!db) return null;
+  // Verify both people belong to user
+  const [personA] = await db.select().from(people)
+    .where(and(eq(people.id, data.personAId), eq(people.userId, userId))).limit(1);
+  if (!personA) throw new Error("Person A not found or not owned by user");
+  const [personB] = await db.select().from(people)
+    .where(and(eq(people.id, data.personBId), eq(people.userId, userId))).limit(1);
+  if (!personB) throw new Error("Person B not found or not owned by user");
   const result = await db.insert(relationships).values({ userId, ...data });
   return result[0].insertId;
 }

@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileText, Check, Trash2, Edit3, Copy } from "lucide-react";
+import { FileText, Check, Trash2, Edit3, Copy, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,7 +27,7 @@ export default function Drafts() {
   const [editBody, setEditBody] = useState("");
 
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.drafts.list.useQuery(
+  const { data, isLoading, error } = trpc.drafts.list.useQuery(
     statusFilter !== "all" ? { status: statusFilter } : {}
   );
 
@@ -37,10 +37,28 @@ export default function Drafts() {
       setEditDraft(null);
       toast.success("Draft updated");
     },
+    onError: (err) => {
+      toast.error(`Failed to update draft: ${err.message}`);
+    },
   });
 
   const deleteMutation = trpc.drafts.delete.useMutation({
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await utils.drafts.list.cancel();
+      const prevData = utils.drafts.list.getData(statusFilter !== "all" ? { status: statusFilter } : {});
+      utils.drafts.list.setData(statusFilter !== "all" ? { status: statusFilter } : {}, (old: any) => {
+        if (!old?.items) return old;
+        return { ...old, items: old.items.filter((d: any) => d.id !== input.id) };
+      });
+      return { prevData };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.prevData) {
+        utils.drafts.list.setData(statusFilter !== "all" ? { status: statusFilter } : {}, context.prevData);
+      }
+      toast.error("Failed to delete draft. Reverted.");
+    },
+    onSettled: () => {
       utils.drafts.list.invalidate();
       toast.success("Draft deleted");
     },
@@ -73,7 +91,14 @@ export default function Drafts() {
         </Select>
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <div className="text-center py-16">
+          <AlertCircle className="h-12 w-12 text-destructive/40 mx-auto mb-4" />
+          <h3 className="font-semibold text-lg mb-2">Failed to load drafts</h3>
+          <p className="text-sm text-muted-foreground mb-4">{error.message}</p>
+          <Button variant="outline" size="sm" onClick={() => utils.drafts.list.invalidate()}>Retry</Button>
+        </div>
+      ) : isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-32 w-full" />

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckSquare, Plus, Trash2, Calendar } from "lucide-react";
+import { CheckSquare, Plus, Trash2, Calendar, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -31,7 +31,7 @@ export default function Tasks() {
   const [form, setForm] = useState({ title: "", description: "", dueAt: "", priority: "medium" });
 
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.tasks.list.useQuery({
+  const { data, isLoading, error } = trpc.tasks.list.useQuery({
     view: tab as "today" | "upcoming" | "completed",
   });
 
@@ -42,14 +42,59 @@ export default function Tasks() {
       setForm({ title: "", description: "", dueAt: "", priority: "medium" });
       toast.success("Task created!");
     },
+    onError: (err) => {
+      toast.error(`Failed to create task: ${err.message}`);
+    },
   });
 
+  // #19: Optimistic update for task completion toggle
   const updateMutation = trpc.tasks.update.useMutation({
-    onSuccess: () => utils.tasks.list.invalidate(),
+    onMutate: async (input) => {
+      await utils.tasks.list.cancel();
+      const prevData = utils.tasks.list.getData({ view: tab as "today" | "upcoming" | "completed" });
+      utils.tasks.list.setData({ view: tab as "today" | "upcoming" | "completed" }, (old: any) => {
+        if (!old?.items) return old;
+        return {
+          ...old,
+          items: old.items.map((t: any) =>
+            t.id === input.id ? { ...t, ...input } : t
+          ),
+        };
+      });
+      return { prevData };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.prevData) {
+        utils.tasks.list.setData({ view: tab as "today" | "upcoming" | "completed" }, context.prevData);
+      }
+      toast.error("Failed to update task. Reverted.");
+    },
+    onSettled: () => {
+      utils.tasks.list.invalidate();
+    },
   });
 
+  // #19: Optimistic delete
   const deleteMutation = trpc.tasks.delete.useMutation({
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await utils.tasks.list.cancel();
+      const prevData = utils.tasks.list.getData({ view: tab as "today" | "upcoming" | "completed" });
+      utils.tasks.list.setData({ view: tab as "today" | "upcoming" | "completed" }, (old: any) => {
+        if (!old?.items) return old;
+        return {
+          ...old,
+          items: old.items.filter((t: any) => t.id !== input.id),
+        };
+      });
+      return { prevData };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.prevData) {
+        utils.tasks.list.setData({ view: tab as "today" | "upcoming" | "completed" }, context.prevData);
+      }
+      toast.error("Failed to delete task. Reverted.");
+    },
+    onSettled: () => {
       utils.tasks.list.invalidate();
       toast.success("Task deleted");
     },
@@ -133,7 +178,17 @@ export default function Tasks() {
         </TabsList>
 
         <TabsContent value={tab} className="mt-4">
-          {isLoading ? (
+          {/* #19: Error state */}
+          {error ? (
+            <div className="text-center py-16">
+              <AlertCircle className="h-12 w-12 text-destructive/40 mx-auto mb-4" />
+              <h3 className="font-semibold text-lg mb-2">Failed to load tasks</h3>
+              <p className="text-sm text-muted-foreground mb-4">{error.message}</p>
+              <Button variant="outline" size="sm" onClick={() => utils.tasks.list.invalidate()}>
+                Retry
+              </Button>
+            </div>
+          ) : isLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-16 w-full" />

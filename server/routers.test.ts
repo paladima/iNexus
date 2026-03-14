@@ -639,3 +639,158 @@ describe("workers", () => {
     await expect(caller.workers.runAll()).rejects.toThrow();
   });
 });
+
+// ─── #20: Additional comprehensive tests ───────────────────────
+
+describe("opportunities.generateDraft", () => {
+  it("generates a draft from an opportunity", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.opportunities.generateDraft({
+      opportunityId: 1,
+      tone: "casual",
+    });
+    expect(result).toBeDefined();
+    expect(result.id).toBe(1);
+  });
+
+  it("requires authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.opportunities.generateDraft({ opportunityId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("opportunities.createTask", () => {
+  it("creates a task from an opportunity", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.opportunities.createTask({
+      opportunityId: 1,
+      title: "Follow up on intro",
+      priority: "high",
+    });
+    expect(result).toBeDefined();
+    expect(result.id).toBe(1);
+  });
+
+  it("requires authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.opportunities.createTask({ opportunityId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("dashboard.generateBrief", () => {
+  it("returns generating status (async background generation)", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.generateBrief();
+    expect(result).toBeDefined();
+    expect(result.status).toBe("generating");
+    expect(result.message).toContain("being generated");
+  });
+});
+
+describe("people.generateSummary", () => {
+  it("generates AI summary for a person", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.people.generateSummary({ personId: 1 });
+    expect(result).toBeDefined();
+  });
+
+  it("requires authentication", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.people.generateSummary({ personId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("people.addInteraction", () => {
+  it("adds an interaction to a person", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.people.addInteraction({
+      personId: 1,
+      interactionType: "meeting",
+      channel: "in_person",
+      content: "Discussed partnership",
+    });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("people.update", () => {
+  it("updates person fields", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.people.update({
+      id: 1,
+      title: "CTO",
+      company: "NewCo",
+    });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("lists.update", () => {
+  it("updates list name", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.lists.update({ id: 1, name: "Updated List" });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("lists.delete", () => {
+  it("deletes a list", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.lists.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("drafts.create", () => {
+  it("creates a draft manually", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.drafts.create({
+      draftType: "outreach",
+      body: "Hello, I wanted to connect...",
+      personId: 1,
+    });
+    expect(result).toBeDefined();
+    expect(result.id).toBe(1);
+  });
+});
+
+describe("multi-tenant isolation", () => {
+  it("different users get separate contexts", async () => {
+    const ctx1 = createAuthContext(1);
+    const ctx2 = createAuthContext(2);
+    const caller1 = appRouter.createCaller(ctx1);
+    const caller2 = appRouter.createCaller(ctx2);
+
+    const result1 = await caller1.auth.me();
+    const result2 = await caller2.auth.me();
+
+    expect(result1?.id).toBe(1);
+    expect(result2?.id).toBe(2);
+    expect(result1?.openId).not.toBe(result2?.openId);
+  });
+
+  it("protected routes reject unauthenticated users consistently", async () => {
+    const ctx = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.people.list()).rejects.toThrow();
+    await expect(caller.tasks.list()).rejects.toThrow();
+    await expect(caller.drafts.list()).rejects.toThrow();
+    await expect(caller.opportunities.list()).rejects.toThrow();
+    await expect(caller.discover.search({ query: "test" })).rejects.toThrow();
+    await expect(caller.voice.history()).rejects.toThrow();
+    await expect(caller.settings.get()).rejects.toThrow();
+  });
+});

@@ -61,9 +61,11 @@
 - [x] #16 Batch outreach for lists (generate drafts for all people in a list)
 
 ## Tests
-- [x] Vitest tests for backend procedures (57 tests passing)
+- [x] Vitest tests for backend procedures (94 tests passing)
 - [x] Tests for auth, onboarding, dashboard, people, lists, tasks, opportunities, drafts, discover, voice, activity, AI command, settings
 - [x] Tests for relationships, warm paths, batch outreach, intro generation, workers
+- [x] Tests for llmHelpers (safeParseJson, parseLLMContent, parseLLMWithSchema, all zod schemas)
+- [x] Tests for opportunity→draft, opportunity→task, multi-tenant isolation
 
 ## Polish
 - [x] Loading states and skeletons
@@ -71,3 +73,25 @@
 - [x] Error handling and toast notifications
 - [ ] Responsive design improvements for mobile
 - [ ] Onboarding wizard (multi-step flow for first-time users)
+
+## Code Review Fixes (20 items)
+- [x] #1 Fix invalid hook call in Home.tsx — move trpc.useUtils() to component body
+- [x] #2 Fix side effect in useAuth — move localStorage.setItem from useMemo to useEffect
+- [x] #3 Guard localStorage access in DashboardLayout — add typeof window check
+- [x] #4 Add safeParseJson helper for all LLM responses in routers.ts and workers.ts
+- [x] #5 Add zod validation schemas for LLM responses (daily brief, person summary, opportunities, voice parsing, drafts)
+- [x] #6 Implement tag filter in getPeople (added to db.ts)
+- [x] #7 Fix multi-tenant leak in getPersonNotes — added userId filter
+- [x] #8 Validate ownership when adding person to list
+- [x] #9 Validate ownership in all related operations (removePersonFromList, getListPeople, createRelationship, batch flows)
+- [x] #10 Throw errors on missing DB in production instead of silent fallback
+- [x] #11 Replace result[0].insertId with safer pattern
+- [x] #12 Refactor worker orchestration — added rate limits, retries, dedup, separate jobs
+- [x] #13 Move dashboard.generateBrief to background job with polling
+- [x] #14 Fix N+1 queries in detectSuggestedIntrosForUser
+- [x] #15 Add opportunity dedup (fingerprint in workers)
+- [x] #16 Extract provider interfaces (server/providers/types.ts)
+- [x] #17 Split routers.ts into routers/ (discover, people, opportunities, voice)
+- [x] #18 Clean production bundle — no debug artifacts present
+- [x] #19 Add optimistic/error UX on key screens (Tasks, Drafts, People — optimistic deletes, error states, retry buttons)
+- [x] #20 Add integration tests — 94 tests total (llmHelpers: 23, routers: 70, auth: 1) covering auth, onboarding, CRUD, discover, voice, workers, relationships, multi-tenant isolation

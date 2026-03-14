@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Plus, Search, Trash2 } from "lucide-react";
+import { Users, Plus, Search, Trash2, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ export default function People() {
   });
 
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.people.list.useQuery({ search: search || undefined });
+  const { data, isLoading, error } = trpc.people.list.useQuery({ search: search || undefined });
   const createMutation = trpc.people.create.useMutation({
     onSuccess: () => {
       utils.people.list.invalidate();
@@ -42,7 +42,22 @@ export default function People() {
     onError: (err) => toast.error(err.message),
   });
   const deleteMutation = trpc.people.delete.useMutation({
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await utils.people.list.cancel();
+      const prevData = utils.people.list.getData({ search: search || undefined });
+      utils.people.list.setData({ search: search || undefined }, (old: any) => {
+        if (!old?.items) return old;
+        return { ...old, items: old.items.filter((p: any) => p.id !== input.id), total: (old.total ?? 1) - 1 };
+      });
+      return { prevData };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.prevData) {
+        utils.people.list.setData({ search: search || undefined }, context.prevData);
+      }
+      toast.error("Failed to delete contact. Reverted.");
+    },
+    onSettled: () => {
       utils.people.list.invalidate();
       toast.success("Contact removed");
     },
@@ -127,7 +142,14 @@ export default function People() {
       </div>
 
       {/* List */}
-      {isLoading ? (
+      {error ? (
+        <div className="text-center py-16">
+          <AlertCircle className="h-12 w-12 text-destructive/40 mx-auto mb-4" />
+          <h3 className="font-semibold text-lg mb-2">Failed to load contacts</h3>
+          <p className="text-sm text-muted-foreground mb-4">{error.message}</p>
+          <Button variant="outline" size="sm" onClick={() => utils.people.list.invalidate()}>Retry</Button>
+        </div>
+      ) : isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-20 w-full" />

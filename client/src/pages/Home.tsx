@@ -18,11 +18,18 @@ import { useLocation } from "wouter";
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: stats, isLoading } = trpc.dashboard.stats.useQuery();
   const { data: brief } = trpc.dashboard.dailyBrief.useQuery();
   const generateBrief = trpc.dashboard.generateBrief.useMutation({
     onSuccess: () => {
-      trpc.useUtils().dashboard.dailyBrief.invalidate();
+      // #13: Brief generates in background; poll for result
+      const poll = setInterval(() => {
+        utils.dashboard.dailyBrief.invalidate().then(() => {
+          // Stop polling after 30s max
+        });
+      }, 3000);
+      setTimeout(() => clearInterval(poll), 30000);
     },
   });
 
