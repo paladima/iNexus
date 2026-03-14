@@ -19,8 +19,13 @@ import {
   Linkedin,
   GitBranch,
   Route,
+  Target,
+  CheckSquare,
+  Clock,
+  CalendarDays,
+  AlertCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 
@@ -34,6 +39,9 @@ export default function PersonProfile() {
   const { data: person, isLoading } = trpc.people.getById.useQuery({ id: personId });
   const { data: relationships } = trpc.relationships.list.useQuery({ personId });
   const { data: warmPaths } = trpc.relationships.warmPaths.useQuery({ personId });
+  const { data: opportunities } = trpc.opportunities.list.useQuery({ personId });
+  const { data: tasks } = trpc.tasks.list.useQuery({});
+  const { data: drafts } = trpc.drafts.list.useQuery({});
 
   const addNoteMutation = trpc.people.addNote.useMutation({
     onSuccess: () => {
@@ -57,6 +65,56 @@ export default function PersonProfile() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  // Derived data for this person
+  const personTasks = useMemo(() => {
+    if (!tasks?.items) return [];
+    return tasks.items.filter((t: any) => t.personId === personId);
+  }, [tasks, personId]);
+
+  const personDrafts = useMemo(() => {
+    if (!drafts?.items) return [];
+    return drafts.items.filter((d: any) => d.personId === personId);
+  }, [drafts, personId]);
+
+  const personOpportunities = useMemo(() => {
+    if (!opportunities?.items) return [];
+    return opportunities.items;
+  }, [opportunities]);
+
+  // Last contact date
+  const lastContact = useMemo(() => {
+    const dates: number[] = [];
+    if (person?.interactions?.length) {
+      person.interactions.forEach((i: any) => {
+        if (i.occurredAt) dates.push(new Date(i.occurredAt).getTime());
+      });
+    }
+    if (person?.notes?.length) {
+      person.notes.forEach((n: any) => {
+        if (n.createdAt) dates.push(new Date(n.createdAt).getTime());
+      });
+    }
+    if (dates.length === 0) return null;
+    return new Date(Math.max(...dates));
+  }, [person]);
+
+  // Days since last contact
+  const daysSinceContact = useMemo(() => {
+    if (!lastContact) return null;
+    return Math.floor((Date.now() - lastContact.getTime()) / (1000 * 60 * 60 * 24));
+  }, [lastContact]);
+
+  // Next action (first open task)
+  const nextAction = useMemo(() => {
+    const open = personTasks.filter((t: any) => t.status !== "done");
+    if (open.length === 0) return null;
+    return open.sort((a: any, b: any) => {
+      if (a.dueAt && b.dueAt) return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+      if (a.dueAt) return -1;
+      return 1;
+    })[0];
+  }, [personTasks]);
 
   if (isLoading) {
     return (
@@ -116,6 +174,101 @@ export default function PersonProfile() {
         </div>
       </div>
 
+      {/* Quick Stats Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="p-3">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">Last Contact</p>
+              <p className="text-sm font-medium">
+                {lastContact ? (
+                  <>
+                    {daysSinceContact === 0
+                      ? "Today"
+                      : daysSinceContact === 1
+                        ? "Yesterday"
+                        : `${daysSinceContact}d ago`}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Never</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">Open Tasks</p>
+              <p className="text-sm font-medium">
+                {personTasks.filter((t: any) => t.status !== "done").length}
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">Opportunities</p>
+              <p className="text-sm font-medium">{personOpportunities.length}</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">Drafts</p>
+              <p className="text-sm font-medium">{personDrafts.length}</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Next Action Banner */}
+      {nextAction && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-3 flex items-center gap-3">
+            <AlertCircle className="h-4 w-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground">Next Action</p>
+              <p className="text-sm font-medium truncate">{nextAction.title}</p>
+            </div>
+            {nextAction.dueAt && (
+              <Badge variant="outline" className="text-xs shrink-0">
+                <CalendarDays className="h-3 w-3 mr-1" />
+                {new Date(nextAction.dueAt).toLocaleDateString()}
+              </Badge>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reconnect Warning */}
+      {daysSinceContact !== null && daysSinceContact > 30 && (
+        <Card className="border-yellow-500/30 bg-yellow-500/5">
+          <CardContent className="p-3 flex items-center gap-3">
+            <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
+            <p className="text-sm">
+              <span className="font-medium text-yellow-500">Reconnect needed:</span>{" "}
+              It has been {daysSinceContact} days since your last interaction.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => generateDraft.mutate({ personId })}
+              disabled={generateDraft.isPending}
+            >
+              Draft Reconnect
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left: Info */}
         <div className="space-y-4">
@@ -165,12 +318,12 @@ export default function PersonProfile() {
             </CardContent>
           </Card>
 
-          {/* AI Summary */}
+          {/* AI Summary — Why This Person Matters */}
           {person.aiSummary && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" /> AI Summary
+                  <Sparkles className="h-4 w-4 text-primary" /> Why This Person Matters
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
@@ -211,7 +364,7 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {/* Relationships */}
+          {/* Connections */}
           {relationships && relationships.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
@@ -248,6 +401,15 @@ export default function PersonProfile() {
             <TabsList>
               <TabsTrigger value="notes" className="gap-1.5">
                 <StickyNote className="h-3.5 w-3.5" /> Notes
+              </TabsTrigger>
+              <TabsTrigger value="tasks" className="gap-1.5">
+                <CheckSquare className="h-3.5 w-3.5" /> Tasks ({personTasks.length})
+              </TabsTrigger>
+              <TabsTrigger value="drafts" className="gap-1.5">
+                <FileText className="h-3.5 w-3.5" /> Drafts ({personDrafts.length})
+              </TabsTrigger>
+              <TabsTrigger value="opportunities" className="gap-1.5">
+                <Target className="h-3.5 w-3.5" /> Opportunities ({personOpportunities.length})
               </TabsTrigger>
               <TabsTrigger value="interactions" className="gap-1.5">
                 <MessageSquare className="h-3.5 w-3.5" /> Interactions
@@ -287,6 +449,139 @@ export default function PersonProfile() {
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   No notes yet. Add your first note above.
+                </p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="tasks" className="mt-4">
+              {personTasks.length > 0 ? (
+                <div className="space-y-2">
+                  {personTasks.map((task: any) => (
+                    <Card key={task.id}>
+                      <CardContent className="p-3 flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${task.status === "done" ? "line-through text-muted-foreground" : ""}`}>
+                            {task.title}
+                          </p>
+                          {task.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{task.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {task.dueAt && (
+                            <Badge variant="outline" className="text-xs">
+                              {new Date(task.dueAt).toLocaleDateString()}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {task.status}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs capitalize ${
+                              task.priority === "high"
+                                ? "border-red-500/30 text-red-400"
+                                : task.priority === "medium"
+                                  ? "border-yellow-500/30 text-yellow-400"
+                                  : ""
+                            }`}
+                          >
+                            {task.priority}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No tasks linked to this person.
+                </p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="drafts" className="mt-4">
+              {personDrafts.length > 0 ? (
+                <div className="space-y-2">
+                  {personDrafts.map((draft: any) => (
+                    <Card key={draft.id}>
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {draft.draftType || "outreach"}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {draft.status}
+                          </Badge>
+                          {draft.tone && (
+                            <Badge variant="outline" className="text-xs">{draft.tone}</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm mt-1 line-clamp-3">{draft.content}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {new Date(draft.createdAt).toLocaleDateString()}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-sm text-muted-foreground mb-3">No drafts for this person.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateDraft.mutate({ personId })}
+                    disabled={generateDraft.isPending}
+                  >
+                    {generateDraft.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <FileText className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Generate Draft
+                  </Button>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="opportunities" className="mt-4">
+              {personOpportunities.length > 0 ? (
+                <div className="space-y-2">
+                  {personOpportunities.map((opp: any) => (
+                    <Card key={opp.id}>
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="text-sm font-medium">{opp.title}</h4>
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {opp.opportunityType}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs capitalize ${
+                              opp.status === "open"
+                                ? "border-green-500/30 text-green-400"
+                                : opp.status === "acted_on"
+                                  ? "border-blue-500/30 text-blue-400"
+                                  : ""
+                            }`}
+                          >
+                            {opp.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{opp.signalSummary}</p>
+                        {opp.recommendedAction && (
+                          <p className="text-xs text-primary/80 mt-1">
+                            <span className="font-medium">Action:</span> {opp.recommendedAction}
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No opportunities linked to this person.
                 </p>
               )}
             </TabsContent>

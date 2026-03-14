@@ -1,19 +1,38 @@
 /**
- * Command Service (#17)
- * Real orchestration entry point: routes intents to service layer.
- * No direct repo calls for business logic — delegates to services.
+ * Command Service (#7-8 v6)
+ * Pure orchestration layer: routes intents to service layer only.
+ * No direct repo calls — delegates everything to services.
  */
-import * as repo from "../repositories";
 import { callLLM } from "./llm.service";
 import { enqueueJob } from "./job.service";
 import * as discoverService from "./discover.service";
+import * as peopleService from "./people.service";
 import * as draftsService from "./drafts.service";
+import * as repo from "../repositories";
 
 interface CommandResult {
   intent: string;
   params: Record<string, unknown>;
   response: string;
   actionResult: Record<string, unknown>;
+}
+
+/**
+ * Helper: find a person by name using people service search
+ */
+async function findPersonByName(userId: number, name: string) {
+  const { items } = await repo.getPeople(userId, { search: name, limit: 1 });
+  return items.length > 0 ? items[0] : null;
+}
+
+/**
+ * Helper: find a list by name
+ */
+async function findListByName(userId: number, name: string) {
+  const lists = await repo.getLists(userId);
+  return lists.find((l: any) =>
+    l.name?.toLowerCase().includes(name.toLowerCase())
+  ) as any | null;
 }
 
 export async function executeCommand(userId: number, command: string): Promise<CommandResult> {
@@ -60,13 +79,12 @@ Always include a helpful "response" message.`,
 
   const result = data as { intent: string; params: Record<string, unknown>; response: string };
 
-  // Step 2: Route to appropriate service
+  // Step 2: Route to appropriate service (no direct repo for business logic)
   let actionResult: Record<string, unknown> = {};
 
   try {
     switch (result.intent) {
       case "discover": {
-        // Use discover service for external search
         const query = String(result.params?.query ?? command);
         const searchResult = await discoverService.executeSearch(userId, query);
         actionResult = {
@@ -79,7 +97,6 @@ Always include a helpful "response" message.`,
       }
 
       case "search_people": {
-        // Search existing contacts
         const query = String(result.params?.query ?? command);
         const { items: foundPeople } = await repo.getPeople(userId, { search: query, limit: 10 });
         actionResult = {
@@ -98,11 +115,8 @@ Always include a helpful "response" message.`,
         if (result.params?.title) {
           let personId: number | undefined;
           if (result.params?.personName) {
-            const { items: matched } = await repo.getPeople(userId, {
-              search: String(result.params.personName),
-              limit: 1,
-            });
-            if (matched.length > 0) personId = matched[0].id;
+            const person = await findPersonByName(userId, String(result.params.personName));
+            if (person) personId = person.id;
           }
           const id = await repo.createTask(userId, {
             title: String(result.params.title),
@@ -137,12 +151,8 @@ Always include a helpful "response" message.`,
 
       case "summarize_person": {
         if (result.params?.personName) {
-          const { items: matchedPeople } = await repo.getPeople(userId, {
-            search: String(result.params.personName),
-            limit: 1,
-          });
-          if (matchedPeople.length > 0) {
-            const person = matchedPeople[0];
+          const person = await findPersonByName(userId, String(result.params.personName));
+          if (person) {
             const jobId = await enqueueJob(userId, "generate_summary", {
               personId: person.id,
             }, {
@@ -166,16 +176,19 @@ Always include a helpful "response" message.`,
 
       case "generate_draft": {
         if (result.params?.personName) {
-          const { items: draftPeople } = await repo.getPeople(userId, {
-            search: String(result.params.personName),
-            limit: 1,
-          });
-          if (draftPeople.length > 0) {
-            const person = draftPeople[0];
+          const person = await findPersonByName(userId, String(result.params.personName));
+          if (person) {
+            // Use drafts service to generate
+            const draft = await draftsService.generateOutreachDraft(
+              userId,
+              person.id,
+              (result.params.tone as string) ?? "professional",
+            );
             actionResult = {
               personId: person.id,
               personName: person.fullName,
-              navigateTo: `/drafts?personId=${person.id}&auto=true`,
+              draftId: draft?.id,
+              navigateTo: `/drafts`,
             };
           } else {
             actionResult = { found: false };
@@ -201,24 +214,20 @@ Always include a helpful "response" message.`,
 
       case "batch_draft": {
         if (result.params?.listName) {
-          const lists = await repo.getLists(userId);
-          const list = lists.find((l: any) =>
-            l.name?.toLowerCase().includes(String(result.params.listName).toLowerCase())
-          );
+          const list = await findListByName(userId, String(result.params.listName));
           if (list) {
-            const listId = (list as any).id;
             const jobId = await enqueueJob(userId, "batch_outreach", {
-              listId,
+              listId: list.id,
               tone: "professional",
             }, {
               entityType: "list",
-              entityId: listId,
+              entityId: list.id,
               priority: 1,
-              dedupeKey: `batch_outreach:${userId}:list:${listId}`,
+              dedupeKey: `batch_outreach:${userId}:list:${list.id}`,
             });
             actionResult = {
-              listId,
-              listName: (list as any).name,
+              listId: list.id,
+              listName: list.name,
               jobId,
               status: "queued",
             };
@@ -232,26 +241,20 @@ Always include a helpful "response" message.`,
 
       case "add_to_list": {
         if (result.params?.personName && result.params?.listName) {
-          const { items: matched } = await repo.getPeople(userId, {
-            search: String(result.params.personName),
-            limit: 1,
-          });
-          const lists = await repo.getLists(userId);
-          const list = lists.find((l: any) =>
-            l.name?.toLowerCase().includes(String(result.params.listName).toLowerCase())
-          );
-          if (matched.length > 0 && list) {
-            await repo.addPersonToList(userId, (list as any).id, matched[0].id);
+          const person = await findPersonByName(userId, String(result.params.personName));
+          const list = await findListByName(userId, String(result.params.listName));
+          if (person && list) {
+            await repo.addPersonToList(userId, list.id, person.id);
             actionResult = {
-              personId: matched[0].id,
-              personName: matched[0].fullName,
-              listId: (list as any).id,
-              listName: (list as any).name,
+              personId: person.id,
+              personName: person.fullName,
+              listId: list.id,
+              listName: list.name,
               added: true,
             };
           } else {
             actionResult = { found: false };
-            result.response = matched.length === 0
+            result.response = !person
               ? `I couldn't find "${result.params.personName}" in your contacts.`
               : `I couldn't find a list matching "${result.params.listName}".`;
           }

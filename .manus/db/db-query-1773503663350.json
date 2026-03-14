@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS `ai_audit_log` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `promptModule` varchar(64) NOT NULL,\n  `entityType` varchar(32),\n  `entityId` int,\n  `success` int NOT NULL DEFAULT 1,\n  `usedFallback` int NOT NULL DEFAULT 0,\n  `errorMessage` text,\n  `durationMs` int,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CONSTRAINT `ai_audit_log_id` PRIMARY KEY(`id`)\n);\nCREATE INDEX IF NOT EXISTS `idx_ai_audit_userId` ON `ai_audit_log` (`userId`);\nCREATE INDEX IF NOT EXISTS `idx_ai_audit_module` ON `ai_audit_log` (`promptModule`);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute CREATE TABLE IF NOT EXISTS `ai_audit_log` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `promptModule` varchar(64) NOT NULL,\n  `entityType` varchar(32),\n  `entityId` int,\n  `success` int NOT NULL DEFAULT 1,\n  `usedFallback` int NOT NULL DEFAULT 0,\n  `errorMessage` text,\n  `durationMs` int,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CONSTRAINT `ai_audit_log_id` PRIMARY KEY(`id`)\n);\nCREATE INDEX IF NOT EXISTS `idx_ai_audit_userId` ON `ai_audit_log` (`userId`);\nCREATE INDEX IF NOT EXISTS `idx_ai_audit_module` ON `ai_audit_log` (`promptModule`);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 500
-}

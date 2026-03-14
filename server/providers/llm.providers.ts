@@ -50,8 +50,7 @@ export class LLMDiscoveryProvider implements DiscoveryProvider {
   /**
    * Step 1: Normalize raw query.
    * Handles: RU→EN translation, typo correction, role/skill/geo extraction.
-   * Non-LinkedIn queries like "найди инструкторов по сварке во Флориде" become
-   * structured English with extracted metadata.
+   * Works for ANY professional domain — not just startups/tech.
    */
   async normalizeQuery(rawQuery: string): Promise<{
     normalized: string;
@@ -67,20 +66,25 @@ export class LLMDiscoveryProvider implements DiscoveryProvider {
           {
             role: "system",
             content: `You are a query normalization engine for a professional networking tool.
+This tool is used to find ANY type of professional — not just tech/startup people.
+Users search for doctors, attorneys, welding instructors, plumbers, consultants, coaches, etc.
+
 Your job:
 1. Detect the language of the input query.
 2. Translate to English if not already English.
-3. Extract structured metadata: role, skills, geographic location.
+3. Extract structured metadata: role, skills, geographic location, industry/domain.
 4. Produce a clean, normalized English search query suitable for finding professionals.
 5. Fix typos and expand abbreviations.
+6. For non-English queries, preserve domain-specific terminology accurately.
 
 Return JSON:
 {
   "normalized": "welding instructors in Florida",
   "originalLanguage": "ru",
   "extractedRole": "instructor",
-  "extractedSkills": ["welding"],
-  "extractedGeo": "Florida, USA"
+  "extractedSkills": ["welding", "metal fabrication"],
+  "extractedGeo": "Florida, USA",
+  "extractedIndustry": "manufacturing/trades"
 }
 
 If the query is already clean English, still return the structured extraction.`,
@@ -115,8 +119,10 @@ If the query is already clean English, still return the structured extraction.`,
           {
             role: "system",
             content: `Decompose this networking search query into structured intent.
-Extract: topic, role, geo, industry, skills, speaker flag, negatives.
-Also generate 3-5 initial query variants.
+This can be ANY profession — tech, medical, legal, trades, education, creative, etc.
+Extract: topic, role, geo, industry, skills, speaker flag, negatives, domain.
+
+Also generate 3-5 initial query variants that cover different angles.
 
 Return JSON:
 {
@@ -127,7 +133,8 @@ Return JSON:
     "industry": "...",
     "skills": ["..."],
     "speaker": false,
-    "negatives": []
+    "negatives": [],
+    "domain": "..."
   },
   "queryVariants": ["variant1", "variant2", "variant3"]
 }`,
@@ -146,7 +153,8 @@ Return JSON:
 
   /**
    * Step 3: Expand intent into 8-15 diverse query variants.
-   * This is the key to multi-query discovery — diverse angles produce richer results.
+   * Key to multi-query discovery — diverse angles produce richer results.
+   * Works for ANY professional domain.
    */
   async expandQueries(intent: DiscoveryIntent, baseVariants: string[]): Promise<string[]> {
     const { data } = await callLLM<{ queries: string[] }>({
@@ -158,13 +166,35 @@ Return JSON:
             content: `You are a query expansion engine for professional networking discovery.
 Given a structured search intent and some initial query variants, generate 8-15 diverse search queries.
 
-Strategy:
-- Vary the role angle (e.g., "CTO" → "VP Engineering", "Head of Technology", "Technical Co-founder")
-- Vary the industry angle (e.g., "fintech" → "banking technology", "financial services innovation")
-- Vary the geographic scope (e.g., "NYC" → "New York metro area", "Northeast US")
-- Add skill-based variants (e.g., "AI researcher" → "machine learning engineer", "deep learning specialist")
-- Add context variants (e.g., "speaker at AI conferences" → "keynote AI summit", "panelist machine learning")
+IMPORTANT: This tool works for ALL professions, not just tech/startup.
+Adapt your expansion strategy to the actual domain:
+
+For tech/business roles:
+- Vary title (CTO → VP Engineering → Head of Technology)
+- Vary industry (fintech → banking technology → financial services)
+
+For medical/healthcare:
+- Vary specialty (cardiologist → heart surgeon → cardiovascular specialist)
+- Include certification variants (board-certified, fellowship-trained)
+
+For legal:
+- Vary practice area (patent attorney → IP lawyer → intellectual property counsel)
+- Include jurisdiction variants
+
+For trades/vocational:
+- Vary certification (licensed, certified, master)
+- Include related trades and specializations
+
+For education/training:
+- Vary level (instructor → professor → trainer → coach)
+- Include subject matter variants
+
+General strategies for ALL domains:
+- Vary geographic scope (city → metro area → state → region)
+- Add skill-based variants
 - Include at least 2 broader/adjacent queries for fallback coverage
+- Add "top" or "leading" variants for quality signal
+- Include industry association or certification body terms
 
 Return JSON: { "queries": ["query1", "query2", ..., "query12"] }
 Return exactly 8-15 queries. No duplicates.`,
@@ -180,7 +210,6 @@ Return exactly 8-15 queries. No duplicates.`,
     });
 
     const expanded = Array.isArray((data as any).queries) ? (data as any).queries as string[] : baseVariants;
-    // Ensure we have at least the base variants and cap at 15
     const all = Array.from(new Set([...baseVariants, ...expanded]));
     return all.slice(0, 15);
   }
@@ -204,17 +233,19 @@ Return exactly 8-15 queries. No duplicates.`,
           {
             role: "system",
             content: `You are a networking discovery engine. Generate 5-8 relevant people profiles for this specific search query.
+This can be ANY profession — generate realistic profiles for the actual domain requested.
+
 For each person provide scoring on 6 axes (0-1 each):
 - roleMatch: how well their title/role matches the query
-- industryMatch: alignment with target industry
+- industryMatch: alignment with target industry/domain
 - geoMatch: geographic relevance
-- seniorityMatch: appropriate seniority level
+- seniorityMatch: appropriate seniority/experience level
 - goalAlignment: relevance to user's networking goals
 - signalStrength: strength of the networking signal
 
 Return JSON: { "results": [{ "fullName": "...", "title": "...", "company": "...", "location": "...", "sourceType": "web", "linkedinUrl": "", "websiteUrl": "", "scoring": { "roleMatch": 0.9, "industryMatch": 0.8, "geoMatch": 0.7, "seniorityMatch": 0.85, "goalAlignment": 0.9, "signalStrength": 0.75 }, "matchReasons": ["reason1", "reason2"], "whyRelevant": "..." }] }
 Exclude anyone matching these negatives: ${JSON.stringify(negatives)}
-Generate realistic, diverse results. Vary companies, seniority levels, and backgrounds.`,
+Generate realistic, diverse results. Vary companies/organizations, experience levels, and backgrounds.`,
           },
           {
             role: "user",
@@ -227,7 +258,6 @@ Generate realistic, diverse results. Vary companies, seniority levels, and backg
     });
 
     const results = ((data as any).results ?? []) as DiscoveryResult[];
-    // Tag each result with the source query
     return results.map((r) => ({
       ...r,
       sourceQuery: query,
@@ -237,7 +267,6 @@ Generate realistic, diverse results. Vary companies, seniority levels, and backg
 
   /**
    * Step 5: Rerank aggregated results from all query variants.
-   * Uses LLM to do a final relevance pass on the top candidates.
    */
   async rerank(
     results: DiscoveryResult[],
@@ -246,7 +275,6 @@ Generate realistic, diverse results. Vary companies, seniority levels, and backg
   ): Promise<DiscoveryResult[]> {
     if (results.length <= 5) return results;
 
-    // Take top 30 candidates for reranking (already scored)
     const candidates = results.slice(0, 30);
 
     const { data } = await callLLM<{ rankings: Array<{ index: number; adjustedScore: number; reason: string }> }>({
@@ -258,8 +286,9 @@ Generate realistic, diverse results. Vary companies, seniority levels, and backg
             content: `You are a reranking engine. Given a list of people candidates and the original search intent, rerank them by true relevance.
 Consider:
 - Direct role/title match to the intent
-- Industry and geographic fit
-- Seniority appropriateness
+- Industry/domain fit
+- Geographic relevance
+- Seniority/experience appropriateness
 - Diversity of results (don't cluster same company/role)
 - Networking value and signal strength
 
@@ -278,7 +307,6 @@ Include ALL candidates in the rankings. Adjust scores between 0 and 1.`,
 
     const rankings = Array.isArray((data as any).rankings) ? (data as any).rankings : [];
 
-    // Apply adjusted scores
     for (const rank of rankings) {
       const idx = rank.index;
       if (idx >= 0 && idx < candidates.length) {
@@ -292,42 +320,65 @@ Include ALL candidates in the rankings. Adjust scores between 0 and 1.`,
       }
     }
 
-    // Sort by adjusted score
     candidates.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
     return candidates;
   }
 
   /**
    * Step 6: Person-level deduplication.
-   * Matches by normalized name + company + linkedinUrl.
+   * Matches by normalized name + company + linkedinUrl + websiteUrl.
+   * Handles slight URL variants and name normalization.
    */
   dedupe(results: DiscoveryResult[]): DiscoveryResult[] {
     const seen = new Map<string, DiscoveryResult>();
 
     for (const r of results) {
-      const name = (r.fullName ?? "").toLowerCase().trim();
-      const company = (r.company ?? "").toLowerCase().trim();
+      const name = (r.fullName ?? "").toLowerCase().trim().replace(/\s+/g, " ");
+      const company = (r.company ?? "").toLowerCase().trim().replace(/\s+/g, " ");
       const linkedin = (r.linkedinUrl ?? "").toLowerCase().trim();
+      const website = (r.websiteUrl ?? "").toLowerCase().trim();
+
+      // Normalize URLs: remove trailing slash, www, protocol
+      const normalizeUrl = (url: string) =>
+        url.replace(/\/$/, "").replace(/^https?:\/\//, "").replace(/^www\./, "");
 
       // Primary key: linkedinUrl if available
       if (linkedin && linkedin.length > 5) {
-        const normalizedLinkedin = linkedin.replace(/\/$/, "");
-        if (seen.has(`li:${normalizedLinkedin}`)) {
-          // Merge: keep higher score
-          const existing = seen.get(`li:${normalizedLinkedin}`)!;
+        const normalizedLinkedin = normalizeUrl(linkedin);
+        const liKey = `li:${normalizedLinkedin}`;
+        if (seen.has(liKey)) {
+          const existing = seen.get(liKey)!;
           if ((r.relevanceScore ?? 0) > (existing.relevanceScore ?? 0)) {
-            seen.set(`li:${normalizedLinkedin}`, {
+            seen.set(liKey, {
               ...r,
               matchReasons: Array.from(new Set([...(existing.matchReasons ?? []), ...(r.matchReasons ?? [])])),
             });
           }
           continue;
         }
-        seen.set(`li:${normalizedLinkedin}`, r);
+        seen.set(liKey, r);
         continue;
       }
 
-      // Secondary key: name + company
+      // Secondary key: websiteUrl if available
+      if (website && website.length > 5) {
+        const normalizedWebsite = normalizeUrl(website);
+        const wsKey = `ws:${normalizedWebsite}`;
+        if (seen.has(wsKey)) {
+          const existing = seen.get(wsKey)!;
+          if ((r.relevanceScore ?? 0) > (existing.relevanceScore ?? 0)) {
+            seen.set(wsKey, {
+              ...r,
+              matchReasons: Array.from(new Set([...(existing.matchReasons ?? []), ...(r.matchReasons ?? [])])),
+            });
+          }
+          continue;
+        }
+        seen.set(wsKey, r);
+        continue;
+      }
+
+      // Tertiary key: name + company
       const key = `${name}|${company}`;
       if (seen.has(key)) {
         const existing = seen.get(key)!;
@@ -340,8 +391,7 @@ Include ALL candidates in the rankings. Adjust scores between 0 and 1.`,
         continue;
       }
 
-      // Tertiary: name-only match (fuzzy — same name different company = different person)
-      // Only dedupe if name is exactly the same AND no company info
+      // Name-only match (same name, no company = likely same person)
       if (!company && seen.has(`${name}|`)) {
         continue;
       }
@@ -350,6 +400,45 @@ Include ALL candidates in the rankings. Adjust scores between 0 and 1.`,
     }
 
     return Array.from(seen.values());
+  }
+
+  /**
+   * Step 7: Broad fallback strategy (#1).
+   * When narrow search yields too few results, generate broader queries
+   * by relaxing constraints: wider geo, adjacent roles, broader industry.
+   */
+  async generateBroadFallbackQueries(intent: DiscoveryIntent): Promise<string[]> {
+    const { data } = await callLLM<{ queries: string[] }>({
+      promptModule: "broad_fallback",
+      params: {
+        messages: [
+          {
+            role: "system",
+            content: `The initial search for professionals returned too few results.
+Generate 5-8 BROADER search queries by relaxing the original constraints:
+
+Strategies:
+1. WIDEN GEOGRAPHY: If city-specific, expand to state/region/country. If country-specific, go global.
+2. RELAX ROLE: Use parent/adjacent role titles. "Senior React Developer" → "Frontend Developer" → "Software Engineer"
+3. BROADEN INDUSTRY: Use parent industry. "Fintech" → "Financial Services" → "Technology"
+4. ADD SYNONYMS: Include alternative titles, certifications, and related specializations.
+5. REMOVE CONSTRAINTS: Drop seniority, specific skills, or niche requirements one at a time.
+6. ADJACENT DOMAINS: Include related fields that often overlap.
+
+Return JSON: { "queries": ["broader query 1", "broader query 2", ...] }
+Return exactly 5-8 queries. Each should be progressively broader than the original.`,
+          },
+          {
+            role: "user",
+            content: `Original intent: ${JSON.stringify(intent)}`,
+          },
+        ],
+        response_format: { type: "json_object" as const },
+      },
+      fallback: { queries: [intent.topic ?? "professionals"] },
+    });
+
+    return Array.isArray((data as any).queries) ? (data as any).queries as string[] : [intent.topic ?? "professionals"];
   }
 }
 

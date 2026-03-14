@@ -87,6 +87,9 @@ export interface DiscoveryProvider {
 
   /** Person-level deduplication across results */
   dedupe(results: DiscoveryResult[]): DiscoveryResult[];
+
+  /** Generate broader fallback queries when narrow search yields too few results */
+  generateBroadFallbackQueries(intent: DiscoveryIntent): Promise<string[]>;
 }
 
 // ─── Draft Provider ────────────────────────────────────────────

@@ -1,4 +1,4 @@
-# iNexus v0.5 — Deployment Guide
+# iNexus v0.6 — Deployment Guide
 
 ## Prerequisites
 
@@ -62,45 +62,47 @@ pnpm build
 NODE_ENV=production node dist/server/index.js
 ```
 
-## Architecture (v5)
+## Architecture (v6)
 
 ```
 server/
   _core/        — Framework plumbing (auth, context, LLM, voice, image, etc.)
   repositories/ — Data access layer (14 repos, barrel-exported)
-  services/     — Business logic layer (9 services)
+  services/     — Business logic layer (10 services)
     ├── llm.service.ts          — Unified LLM client with audit
     ├── job.service.ts          — DB-only job queue with worker polling
     ├── job.handlers.ts         — All background job type handlers
-    ├── discover.service.ts     — Discovery pipeline (normalize → multi-query → rerank → dedupe)
+    ├── discover.service.ts     — Discovery pipeline (normalize → multi-query → rerank → dedupe → broad fallback)
     ├── drafts.service.ts       — Draft generation (provider-first with fallback)
     ├── people.service.ts       — Person CRUD + summary + dedup
-    ├── opportunities.service.ts— Opportunity detection + fingerprint dedup
+    ├── opportunities.service.ts— Opportunity detection + fingerprint dedup + action layer
     ├── voice.service.ts        — Voice upload/transcribe/parse/edit/confirm/save
-    ├── command.service.ts      — Command bar orchestrator (11 intents)
+    ├── command.service.ts      — Command bar orchestrator (11 intents, service-only)
     └── dashboard.service.ts    — Dashboard stats + brief lifecycle
   providers/    — Pluggable AI providers with fallback chains
     ├── types.ts       — Provider interfaces (6 providers)
     ├── registry.ts    — Registry + feature flags + Proxy fallback
-    ├── llm.providers.ts — LLM-backed implementations
+    ├── llm.providers.ts — LLM-backed implementations (broad fallback, general expansion)
     └── init.ts        — Startup wiring
   routers/      — tRPC routers by domain (13 thin routers, barrel-exported)
-  workers/      — Background workers (opportunity scan, brief, reconnect)
+  workers.ts    — Background workers (opportunity scan, brief, reconnect) — service-layer only
   validators/   — Zod schemas for input validation
   llmHelpers.ts — Shared LLM parsing utilities
 client/
-  src/pages/    — 13 frontend screens
-  src/components/ — Reusable UI components
+  src/pages/    — 12 frontend screens (lazy-loaded for heavy pages)
+  src/components/ — Reusable UI components (shadcn/ui)
 ```
 
-### Key Architecture Principles
+### Key Architecture Principles (v6)
 
 1. **Router → Service → Repository**: Routers are thin (input validation + delegation). Business logic lives in services. Data access in repositories.
 2. **Provider-first AI**: All AI calls go through typed providers (DiscoveryProvider, DraftProvider, VoiceParserProvider, OpportunityProvider, RelationshipProvider, DailyBriefProvider). No direct `invokeLLM` in services or routers.
 3. **Fallback chains**: `getProviderWithFallback()` returns a Proxy that tries primary → fallback → throws. Graceful degradation built-in.
 4. **DB-only job queue**: Jobs enqueued to MySQL, worker polls with `FOR UPDATE SKIP LOCKED`, supports priority, cancellation, progress tracking, retry with exponential backoff, and deduplication keys.
-5. **Discovery pipeline (v5)**: DiscoveryProvider.normalizeQuery → decomposeIntent → expandQueries (multi-query) → parallel search → aggregateResults → rerank → dedupe. Fallback to broad mode on empty results.
-6. **Barrel exports**: All routers, services, repositories, and providers use barrel exports for clean imports.
+5. **Discovery pipeline (v6)**: DiscoveryProvider.normalizeQuery → decomposeIntent → expandQueries (multi-query) → parallel search → aggregateResults → rerank → dedupe → **broad fallback via generateBroadFallbackQueries** (general professional expansion for non-LinkedIn queries).
+6. **Service-only orchestration**: Command bar and workers use only service layer — no direct repo or LLM calls.
+7. **Barrel exports**: All routers, services, repositories, and providers use barrel exports for clean imports.
+8. **Lazy loading**: Heavy pages (Discover, Voice, PersonProfile, Opportunities) use React.lazy for faster initial load.
 
 ## Health Check
 
@@ -147,43 +149,76 @@ Configured in `server/providers/registry.ts`:
 | `USE_WARM_PATHS` | `true` | Enable warm path detection |
 | `USE_EXTERNAL_PEOPLE_ENGINE` | `false` | Use external people search |
 
-## Discovery Pipeline (v5)
+## Discovery Pipeline (v6)
 
-The discovery system uses a multi-stage pipeline:
+The discovery system uses a multi-stage pipeline with broad fallback:
 
-1. **Normalize**: Clean and standardize the user's query
+1. **Normalize**: Clean and standardize the user's query (RU→EN, role/skill/geo extraction)
 2. **Decompose**: Extract intent, entity types, industry, geography
 3. **Expand**: Generate 2-4 query variants for broader coverage
 4. **Search**: Run all expanded queries in parallel
 5. **Aggregate**: Merge results, boost items found by multiple queries
 6. **Rerank**: Score by relevance to original query + user goals
 7. **Dedupe**: Remove duplicates by name+company fingerprint
-8. **Fallback**: If zero results, retry with broad mode (relaxed filters)
+8. **Broad Fallback (v6)**: If zero results, generate broad fallback queries via `generateBroadFallbackQueries()` — expands to general professional categories (industry leaders, domain experts, adjacent roles) and retries search with relaxed filters
 
-## Command Bar Intents (v5)
+### Broad Fallback Strategy
 
-The command bar supports 11 natural language intents:
+When the primary pipeline returns zero results (common for niche or non-LinkedIn queries), the system:
+- Generates 3-5 broader query variants via LLM (e.g., "AI ethics researcher" → ["AI ethics professor", "responsible AI leader", "AI governance expert"])
+- Runs parallel search on all broad variants
+- Aggregates and reranks with lower relevance threshold
+- Returns results with `broadFallback: true` flag for UI indication
+
+## Opportunity Action Layer (v6)
+
+Each opportunity supports direct actions:
+
+| Action | Endpoint | Description |
+|---|---|---|
+| Generate Draft | `opportunities.generateDraft` | Create outreach draft from opportunity signal |
+| Create Task | `opportunities.createTask` | Create follow-up task from opportunity |
+| Generate Intro | `opportunities.generateIntro` | Generate introduction request draft |
+| Mark Acted On | `opportunities.update` | Mark opportunity as acted upon |
+| Dismiss | `opportunities.update` | Dismiss irrelevant opportunity |
+
+## Command Bar Intents (v6)
+
+The command bar supports 11 natural language intents (service-only orchestration):
 
 | Intent | Example | Action |
 |---|---|---|
 | `discover` | "find AI investors in NYC" | External people search |
 | `search_people` | "search John" | Search existing contacts |
-| `create_task` | "create task follow up with Sarah" | Create task |
-| `create_list` | "create list VCs" | Create new list |
-| `summarize_person` | "summarize John Smith" | Enqueue summary job |
-| `generate_draft` | "draft message to Sarah" | Navigate to draft editor |
-| `show_reconnects` | "show reconnects" | Show stale contacts |
-| `batch_draft` | "draft messages for VC list" | Enqueue batch outreach job |
-| `add_to_list` | "add John to VC list" | Add person to list |
+| `create_task` | "create task follow up with Sarah" | Create task via service |
+| `create_list` | "create list VCs" | Create new list via service |
+| `summarize_person` | "summarize John Smith" | Enqueue summary job via service |
+| `generate_draft` | "draft message to Sarah" | Generate draft via service |
+| `show_reconnects` | "show reconnects" | Show stale contacts via service |
+| `batch_draft` | "draft messages for VC list" | Enqueue batch outreach via service |
+| `add_to_list` | "add John to VC list" | Add person to list via service |
 | `unknown` | — | Helpful error message |
 
-## Voice Workflow (v5)
+## Voice Workflow (v6)
 
-Full confirm-edit-save flow:
+Full confirm-edit-save flow with first-class UX:
 
 1. **Upload**: Audio → S3 → URL
 2. **Transcribe**: URL → Whisper API → text
 3. **Parse**: Text → VoiceParserProvider → structured actions (people, tasks, notes, reminders)
-4. **Edit**: User can modify parsed actions before confirming
-5. **Confirm**: Selected actions saved to database with dedup
-6. **Activity**: All voice actions logged to activity timeline
+4. **Review**: User reviews parsed actions with inline editing
+5. **Edit**: User can modify, remove, or add parsed actions before confirming
+6. **Confirm**: Selected actions saved to database with dedup
+7. **Activity**: All voice actions logged to activity timeline
+8. **Retry**: On failure, user can retry transcription or parsing
+
+## Person Profile (v6)
+
+Relationship memory center with:
+- **Quick Stats Bar**: Last contact, open tasks, opportunities, drafts count
+- **Next Action Banner**: First open task with due date
+- **Reconnect Warning**: Auto-detect when >30 days since last interaction
+- **Tabbed Content**: Notes, Tasks, Drafts, Opportunities, Interactions
+- **AI Summary**: "Why This Person Matters" section
+- **Warm Paths**: Introduction paths through mutual connections
+- **Connections**: Direct relationship graph links

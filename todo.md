@@ -209,3 +209,26 @@
 - [x] #19 Deploy profile deliverable: .env.example, migrations, seed, worker start, app start, health, README (DEPLOY.md v5)
 - [x] #20 Prepare for product validation mode: staging-ready, key flows tested
 - [x] Updated test suite with v5 provider mocks (86 tests passing, 0 TS errors)
+
+## MVP Hardening v6 (20 items)
+- [x] #1 Discovery broad fallback strategy: relax role constraints, expand geography, add skill/title synonyms, broader source patterns
+- [x] #2 Query expansion for general professionals (doctors, trainers, attorneys, contractors, consultants — not just founders/investors/speakers)
+- [x] #3 Transparent UI for normalized query / expanded search (show original query, normalized, expanded roles/skills, broad search activated)
+- [x] #4 End-to-end discover workflow polish: search → select → save → add to list → generate drafts → create follow-up tasks
+- [x] #5 Bulk UX on Discover: multi-select, select all visible, save selected, add to list, generate drafts, create tasks
+- [x] #6 Enhanced dedupe in bulkSavePeople: normalized full name, title similarity, location/company fuzziness, URL variant protection
+- [x] #7 Command.service.ts pure service-only orchestration (no direct repo calls — command → service → repository/provider)
+- [x] #8 Command bar as main entry to key workflows (discover, create task, generate draft, show reconnects, summarize person, create list, add to list)
+- [x] #9 Job queue: separate worker entrypoint with independent process lifecycle (app server ≠ worker)
+- [x] #10 Job status UX for all heavy operations (queued/running/retrying/failed/completed) — daily brief, summary, batch outreach, voice parse
+- [x] #11 User-facing retry/cancel/failure UX: show retry state, cancel state, failure reason, retry button
+- [x] #12 jobs.repo.ts full repository discipline: all job transitions centralized, no raw SQL in job.service.ts
+- [x] #13 Voice flow first-class: upload → transcribe → parse → review → edit → confirm → save → activity log
+- [x] #14 Voice UI: edit parsed people/tasks/notes (edit name, due date, remove task, link note to person, change priority)
+- [x] #15 Person Profile as relationship memory center: why matters, last contact, next action, open tasks, linked opportunities, draft history, recent notes, relationship hints
+- [x] #16 Opportunities as action layer: generate draft, create task, ignore, mark acted, open person, add to list per opportunity
+- [x] #17 Opportunity dedupe/fingerprint: userId + type + personId + normalized signal + TTL/expire logic
+- [x] #18 Client bundle cleanup: remove ComponentShowcase.tsx, debug artifacts, lazy-load heavy pages, remove unused shadcn/ui components
+- [x] #19 Repository cleanup: remove .manus/db, debug-collector.js, temp artifacts — clean source/migrations/docs/scripts only
+- [x] #20 Deployable MVP profile: .env.example, migration command, seed/mock data, app start, worker start, health endpoint, README local + deploy + staging
+- [x] Updated test suite with v6 provider mocks (86 tests passing, 0 TS errors)

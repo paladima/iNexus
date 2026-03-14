@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE jobs\n  ADD COLUMN runAfter TIMESTAMP NULL DEFAULT NULL,\n  ADD COLUMN dedupeKey VARCHAR(255) NULL DEFAULT NULL,\n  ADD COLUMN attemptStartedAt TIMESTAMP NULL DEFAULT NULL,\n  ADD COLUMN workerId VARCHAR(64) NULL DEFAULT NULL,\n  ADD COLUMN entityType VARCHAR(64) NULL DEFAULT NULL,\n  ADD COLUMN entityId INT NULL DEFAULT NULL;\n\nCREATE INDEX idx_jobs_dedupeKey ON jobs(dedupeKey);\nCREATE INDEX idx_jobs_runAfter ON jobs(runAfter);\n",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute ALTER TABLE jobs\n  ADD COLUMN runAfter TIMESTAMP NULL DEFAULT NULL,\n  ADD COLUMN dedupeKey VARCHAR(255) NULL DEFAULT NULL,\n  ADD COLUMN attemptStartedAt TIMESTAMP NULL DEFAULT NULL,\n  ADD COLUMN workerId VARCHAR(64) NULL DEFAULT NULL,\n  ADD COLUMN entityType VARCHAR(64) NULL DEFAULT NULL,\n  ADD COLUMN entityId INT NULL DEFAULT NULL;\n\nCREATE INDEX idx_jobs_dedupeKey ON jobs(dedupeKey);\nCREATE INDEX idx_jobs_runAfter ON jobs(runAfter);\n",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 3398
-}

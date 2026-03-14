@@ -7,7 +7,7 @@
  *   4. multi-search    — search each variant, aggregate results
  *   5. rerank          — LLM-based final relevance pass
  *   6. dedupe          — person-level deduplication
- *   7. fallback        — broad mode if results are too few
+ *   7. fallback        — broad mode with generateBroadFallbackQueries if results are too few
  *
  * No direct invokeLLM calls. All AI through DiscoveryProvider.
  */
@@ -94,18 +94,38 @@ export async function executeSearch(
     allResults = await provider.rerank(allResults, intent, goals ?? undefined);
   }
 
-  // Step 8: Fallback broad mode — if too few results, try broader query (#1)
+  // Step 8: Enhanced broad fallback strategy (#1 v6)
+  // If too few results, use generateBroadFallbackQueries to relax constraints
+  // and search again with broader queries.
+  let usedBroadFallback = false;
   if (allResults.length < MIN_RESULTS_THRESHOLD) {
-    const broadQuery = intent.topic || normalizedQuery;
-    const broadResults = await provider.search(
-      broadQuery,
-      { topic: broadQuery }, // minimal intent for broad search
-      [broadQuery],
-      filters,
-      goals ?? undefined
-    );
-    const broadDeduped = provider.dedupe([...allResults, ...broadResults]);
-    allResults = broadDeduped;
+    usedBroadFallback = true;
+    const broadQueries = await provider.generateBroadFallbackQueries(intent);
+
+    // Search broader queries in batches
+    const broadResults: DiscoveryResult[] = [];
+    for (let i = 0; i < broadQueries.length; i += batchSize) {
+      const batch = broadQueries.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map((bq) =>
+          provider.search(
+            bq,
+            { topic: bq }, // minimal intent for broad search
+            broadQueries,
+            filters,
+            goals ?? undefined
+          )
+        )
+      );
+      for (const results of batchResults) {
+        broadResults.push(...results);
+      }
+    }
+
+    // Merge, dedupe, and re-sort
+    const merged = provider.dedupe([...allResults, ...broadResults]);
+    merged.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    allResults = merged;
   }
 
   // Step 9: Persist results
@@ -130,6 +150,7 @@ export async function executeSearch(
       queryVariantCount: queryVariants.length,
       originalLanguage: normalization.originalLanguage,
       normalizedQuery,
+      usedBroadFallback,
       intent: intent as unknown as Record<string, unknown>,
     },
   });
@@ -139,6 +160,7 @@ export async function executeSearch(
     results: allResults as Array<Record<string, unknown>>,
     intent: intent as unknown as Record<string, unknown>,
     queryVariants,
+    usedBroadFallback,
     normalization: {
       original: query,
       normalized: normalizedQuery,

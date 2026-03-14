@@ -212,6 +212,7 @@ vi.mock("./providers/registry", () => {
     ]),
     rerank: vi.fn().mockImplementation(async (results: any[]) => results),
     dedupe: vi.fn().mockImplementation((results: any[]) => results),
+    generateBroadFallbackQueries: vi.fn().mockResolvedValue(["AI founders broad", "tech startup leaders"]),
   };
   const mockDraftProvider = {
     generateDraft: vi.fn().mockResolvedValue({ subject: "Introduction", body: "I'd like to introduce...", tone: "professional" }),

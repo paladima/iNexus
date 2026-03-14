@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE search_queries ADD COLUMN parsedIntentsJson JSON DEFAULT NULL;\nALTER TABLE search_queries ADD COLUMN queryVariantsJson JSON DEFAULT NULL;\nALTER TABLE search_queries ADD COLUMN negativeTermsJson JSON DEFAULT NULL;\nALTER TABLE search_results ADD COLUMN scoringJson JSON DEFAULT NULL;\nALTER TABLE search_results ADD COLUMN matchReasonsJson JSON DEFAULT NULL;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 23HwM7PUxQsK5PN.a60c7e99437a --database AcFGcxfxUtLSm6TKPdotRH --execute ALTER TABLE search_queries ADD COLUMN parsedIntentsJson JSON DEFAULT NULL;\nALTER TABLE search_queries ADD COLUMN queryVariantsJson JSON DEFAULT NULL;\nALTER TABLE search_queries ADD COLUMN negativeTermsJson JSON DEFAULT NULL;\nALTER TABLE search_results ADD COLUMN scoringJson JSON DEFAULT NULL;\nALTER TABLE search_results ADD COLUMN matchReasonsJson JSON DEFAULT NULL;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 876
-}
