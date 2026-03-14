@@ -122,14 +122,33 @@ export async function confirmVoiceActions(
     }
   }
 
-  // Save notes (linked to person if found)
+  // Save notes (linked to person if found, or as unlinked activity note) (#14)
   for (const n of notes.filter((n) => n.save)) {
     try {
+      let linked = false;
       if (n.personName) {
-        const { items } = await repo.getPeople(userId, { search: n.personName, limit: 1 });
-        if (items.length > 0) {
-          await repo.addPersonNote(userId, items[0].id, n.content, "voice", "ai");
+        const { items } = await repo.getPeople(userId, { search: n.personName, limit: 10 });
+        // Use fuzzy matching to find the right person
+        const match = items.find((e) => isFuzzyNameMatch(e.fullName, n.personName!));
+        if (match) {
+          await repo.addPersonNote(userId, match.id, n.content, "voice", "ai");
+          linked = true;
         }
+      }
+      // If no person found or no personName, save as unlinked activity note (#14)
+      if (!linked) {
+        await repo.logActivity(userId, {
+          activityType: "voice_note_unlinked",
+          title: n.personName
+            ? `Voice note (unlinked — "${n.personName}" not found): ${n.content.slice(0, 80)}`
+            : `Voice note: ${n.content.slice(0, 100)}`,
+          metadataJson: {
+            content: n.content,
+            personName: n.personName ?? null,
+            source: "voice",
+            captureId,
+          },
+        });
       }
       results.savedNotes++;
     } catch (err) {

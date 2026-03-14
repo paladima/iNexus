@@ -7,6 +7,7 @@ import * as repo from "../repositories";
 import { callLLM } from "./llm.service";
 import { personSummarySchema } from "../llmHelpers";
 import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
+import { matchPerson, type PersonCandidate } from "../utils/personMatcher";
 
 export async function generatePersonSummary(userId: number, personId: number) {
   const person = await repo.getPersonById(userId, personId);
@@ -102,16 +103,15 @@ export async function savePerson(
     tags?: string[];
   }
 ) {
-  // Dedup check: exact + fuzzy name matching (#10)
+  // Dedup check: multi-layer matching via PersonMatcher (#9, #10)
   if (data.fullName) {
-    const { items: existing } = await repo.getPeople(userId, { search: data.fullName, limit: 10 });
-    const duplicate = existing.find(
-      (e) =>
-        isFuzzyNameMatch(e.fullName, data.fullName) &&
-        (!data.company || (e.company ?? "").toLowerCase() === data.company.toLowerCase())
+    const { items: existing } = await repo.getPeople(userId, { search: data.fullName, limit: 20 });
+    const result = matchPerson(
+      { fullName: data.fullName, company: data.company, linkedinUrl: data.linkedinUrl, websiteUrl: data.websiteUrl },
+      existing as PersonCandidate[]
     );
-    if (duplicate) {
-      return { id: duplicate.id, duplicate: true };
+    if (result.matched && result.existingId) {
+      return { id: result.existingId, duplicate: true };
     }
   }
 

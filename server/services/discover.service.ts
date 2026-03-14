@@ -15,6 +15,7 @@ import * as repo from "../repositories";
 import { enqueueJob } from "./job.service";
 import { getProviderWithFallback } from "../providers/registry";
 import { isFuzzyNameMatch } from "../utils/fuzzyMatch";
+import { buildPersonIndex, matchPerson, type PersonCandidate } from "../utils/personMatcher";
 import type { DiscoveryProvider, DiscoveryResult, DiscoveryIntent } from "../providers/types";
 
 const MIN_RESULTS_THRESHOLD = 3;
@@ -191,50 +192,20 @@ export async function bulkSavePeople(
   // Batch read: get all existing people once
   const { items: existingPeople } = await repo.getPeople(userId, { limit: 1000 });
 
-  // Build lookup indexes for dedup (#10)
-  const nameCompanyIndex = new Map<string, number>();
-  const linkedinIndex = new Map<string, number>();
-  const websiteIndex = new Map<string, number>();
-
-  for (const ep of existingPeople) {
-    const nameKey = `${(ep.fullName ?? "").toLowerCase().trim()}|${(ep.company ?? "").toLowerCase().trim()}`;
-    nameCompanyIndex.set(nameKey, ep.id);
-
-    if (ep.linkedinUrl) {
-      linkedinIndex.set(ep.linkedinUrl.toLowerCase().replace(/\/$/, ""), ep.id);
-    }
-    if (ep.websiteUrl) {
-      websiteIndex.set(ep.websiteUrl.toLowerCase().replace(/\/$/, ""), ep.id);
-    }
-  }
+  // Build centralized person index for dedup (#9, #10)
+  const candidates = existingPeople as PersonCandidate[];
+  const indexes = buildPersonIndex(candidates);
 
   for (const p of people) {
-    // Enhanced dedup: check linkedinUrl first, then websiteUrl, then name+company (#10)
-    let existingId: number | undefined;
+    // Multi-layer dedup via PersonMatcher (#9, #10)
+    const result = matchPerson(p, candidates, indexes);
 
-    if (p.linkedinUrl) {
-      existingId = linkedinIndex.get(p.linkedinUrl.toLowerCase().replace(/\/$/, ""));
-    }
-    if (!existingId && p.websiteUrl) {
-      existingId = websiteIndex.get(p.websiteUrl.toLowerCase().replace(/\/$/, ""));
-    }
-    if (!existingId) {
-      const nameKey = `${p.fullName.toLowerCase().trim()}|${(p.company ?? "").toLowerCase().trim()}`;
-      existingId = nameCompanyIndex.get(nameKey);
-    }
-
-    if (existingId) {
-      matched.push(p.fullName);
-      continue;
-    }
-
-    // Fuzzy name matching (#10): catch "John Smith" vs "Jon Smith"
-    const fuzzyDup = existingPeople.some(
-      (e) => isFuzzyNameMatch(e.fullName, p.fullName) &&
-        (!p.company || (e.company ?? "").toLowerCase().trim() === (p.company ?? "").toLowerCase().trim())
-    );
-    if (fuzzyDup) {
-      skipped.push(p.fullName);
+    if (result.matched) {
+      if (result.matchType === "fuzzy_name") {
+        skipped.push(p.fullName);
+      } else {
+        matched.push(p.fullName);
+      }
       continue;
     }
 
@@ -248,10 +219,12 @@ export async function bulkSavePeople(
     if (id) {
       savedIds.push(id);
       // Update indexes for subsequent dedup within the same batch
+      const newCandidate: PersonCandidate = { id, fullName: p.fullName, company: p.company, linkedinUrl: p.linkedinUrl, websiteUrl: p.websiteUrl };
+      candidates.push(newCandidate);
       const nameKey = `${p.fullName.toLowerCase().trim()}|${(p.company ?? "").toLowerCase().trim()}`;
-      nameCompanyIndex.set(nameKey, id);
-      if (p.linkedinUrl) linkedinIndex.set(p.linkedinUrl.toLowerCase().replace(/\/$/, ""), id);
-      if (p.websiteUrl) websiteIndex.set(p.websiteUrl.toLowerCase().replace(/\/$/, ""), id);
+      indexes.nameCompanyIndex.set(nameKey, id);
+      if (p.linkedinUrl) indexes.linkedinIndex.set(p.linkedinUrl.toLowerCase().replace(/\/$/, "").replace(/^https?:\/\//, "").replace(/^www\./, ""), id);
+      if (p.websiteUrl) indexes.websiteIndex.set(p.websiteUrl.toLowerCase().replace(/\/$/, "").replace(/^https?:\/\//, "").replace(/^www\./, ""), id);
     }
   }
 

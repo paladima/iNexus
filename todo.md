@@ -301,3 +301,26 @@
 - [x] Integrate WarmPaths component into Person Profile (replaces old warm paths section)
 - [x] Add "Ask for Intro" button in WarmPaths component → relationships.buildIntroRequest → LLM draft
 - [x] Updated test suite with v9 pillar tests (127 tests passing: 17 v9pillars, 21 fuzzyMatch, 23 llmHelpers, 65 routers, 1 auth)
+
+## v10 — Code Review Fixes (20 items)
+- [x] #1 Fix barrel exports in routers/index.ts — onboardingRouter exported from auth.router.ts, settingsRouter from activity.router.ts, both wired in routers.ts (verified)
+- [x] #2 Remove direct repo calls from command.service.ts — add_to_list now delegates to discoverService.bulkAddToList, findPerson uses PersonMatcher fuzzy matching
+- [x] #3 Extract findPersonByNameFuzzy → utils/personMatcher.ts, used by command.service for all person lookups
+- [x] #4 Strengthen discovery broad mode — generateBroadFallbackQueries with 6 strategies: widen geo, relax role, broaden industry, add synonyms, remove constraints, adjacent domains
+- [x] #5 Query expansion handles all domains — expandQueries generates 8-15 variants with domain-specific strategies for tech, medical, legal, trades, education
+- [x] #6 Discover UI shows: intent analysis panel (topic, role, geo, industry, skills, negatives), query variants, normalization info, broad fallback indicator
+- [x] #7 Main workflow: discover → multi-select → save → add to list (ListPickerDialog) → generate drafts → create tasks — all chained in Discover.tsx
+- [x] #8 Bulk actions: checkbox per card, Select All/Deselect All, Save to Contacts, Add to List, Generate Drafts, Create Tasks — all real mutations
+- [x] #9 Strengthen dedupe — now uses centralized PersonMatcher with 4-layer matching: LinkedIn URL → Website URL → exact name+company → fuzzy name (Levenshtein)
+- [x] #10 Created utils/personMatcher.ts with buildPersonIndex, matchPerson, findPersonByNameFuzzy — used by discover.service, people.service, voice.service, command.service
+- [x] #11 Voice flow: full review/edit UX with transcript editing, item editing (name, role, company, title, priority, due date), remove items, partial confirm
+- [x] #12 Voice person linking uses fuzzy matching via isFuzzyNameMatch for better person resolution
+- [x] #13 Fixed: unlinked voice notes now saved as activity log entries (voice_note_unlinked) with full content and metadata
+- [x] #14 Voice state machine: VoiceStep type = idle|recording|processing|review|saving|saved|error — enforced in Voice.tsx
+- [x] #15 Separate worker: server/worker.ts with pnpm worker/worker:once/worker:dev, SIGINT/SIGTERM graceful shutdown, WORKER_CONCURRENCY env
+- [x] #16 Job progress: status field (pending→running→completed/failed/cancelled), progress percentage, pollJobStatus endpoint
+- [x] #17 dedupeKey audit: all producers use userId+jobType+entityId pattern (verified in job.handlers.ts, command.service.ts, discover.service.ts)
+- [x] #18 Person Profile: AI summary, last contact, next action, open tasks, linked opportunities, draft history, notes, warm paths (WarmPaths component), reconnect warning
+- [x] #19 .gitignore covers .manus/, .manus-logs/, .webdev/, client/public/__manus__/, dist/, build/ — verified clean
+- [x] #20 Deploy-ready: DEPLOY.md, README.md, .env.example, /api/health, pnpm worker scripts, pnpm db:push migration
+- [x] Updated test suite with v10 PersonMatcher tests (140 tests passing: 13 personMatcher, 21 fuzzyMatch, 17 v9pillars, 23 llmHelpers, 65 routers, 1 auth)
